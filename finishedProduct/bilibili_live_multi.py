@@ -14,6 +14,9 @@
 #         You should have received a copy of the GNU General Public License
 #         along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #         2436725966@qq.com
+import urllib3
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 import asyncio
 import base64
 import hashlib
@@ -142,6 +145,23 @@ class SslErrorCode:
 
 
 # 工具类函数
+def log_request(title, method, url, headers, params=None, data=None):
+    log_save(obs.LOG_DEBUG, f"[{title}] {method} {url}")
+    if headers:
+        log_save(obs.LOG_DEBUG, f"[{title}] Headers: {json.dumps(dict(headers), ensure_ascii=False)}")
+    if params:
+        log_save(obs.LOG_DEBUG, f"[{title}] Params: {json.dumps(params, ensure_ascii=False)}")
+    if data:
+        log_save(obs.LOG_DEBUG, f"[{title}] Data: {json.dumps(data, ensure_ascii=False)}")
+
+def log_response(title, response):
+    log_save(obs.LOG_DEBUG, f"[{title}] Status: {response.status_code}")
+    log_save(obs.LOG_DEBUG, f"[{title}] Headers: {json.dumps(dict(response.headers), ensure_ascii=False)}")
+    set_cookie = response.headers.get('Set-Cookie', '')
+    if set_cookie:
+        log_save(obs.LOG_DEBUG, f"[{title}] Set-Cookie: {set_cookie}")
+    log_save(obs.LOG_DEBUG, f"[{title}] Cookies: {response.cookies.get_dict()}")
+
 class Tools:
     """工具函数"""
 
@@ -331,8 +351,8 @@ class Tools:
 
             # 检查响应状态
             if response.status_code >= 400:
-                # result['success'] = False
-                # result['code'] = SslErrorCode.SSL_NETWORK_ERROR
+                result['success'] = False
+                result['code'] = SslErrorCode.SSL_NETWORK_ERROR
                 result['message'] = f"测试请求返回错误状态: {response.status_code}"
 
         except SSLError as e:
@@ -357,16 +377,14 @@ class Tools:
             # 其他网络错误
             result['success'] = False
             result['code'] = SslErrorCode.SSL_NETWORK_ERROR
-            # result['data']['ssl_context_modified'] = False
-            result['data']['ssl_verification_enabled'] = True
+            result['data']['ssl_verification_enabled'] = False
             result['message'] = f"网络请求错误: {str(e)}"
 
         except Exception as e:
             # 其他未知错误
             result['success'] = False
             result['code'] = SslErrorCode.SSL_UNKNOWN_ERROR
-            # result['data']['ssl_context_modified'] = False
-            result['data']['ssl_verification_enabled'] = True
+            result['data']['ssl_verification_enabled'] = False
             result['message'] = f"未知错误: {str(e)}"
 
         return result
@@ -1383,27 +1401,27 @@ class BiliDanmu:
             """接收到发送认证包后的回复时的回调函数，参数为接收到的数据"""
             self.connectionFailureCallback: Callable[[int, int], None] = lambda delay, retry_count: None
             """连接失败回调，参数为（重试间隔，当前重试次数）"""
-            self.authenticationResponseTimeoutCallback: Callable[[], None] = lambda : None
+            self.authenticationResponseTimeoutCallback: Callable[[], None] = lambda: None
             """认证响应超时回调，无参"""
             self.authenticationFailureCallback: Callable = lambda e: None
             """认证失败回调，参数为错误"""
-            self.heartRateCallback: Callable = lambda : None
+            self.heartRateCallback: Callable = lambda: None
             """心率回调，无参"""
             self.heartRateFailureCallback: Callable = lambda e: None
             """心率失败回调，参数为错误"""
             self.multipleMessagesCallback: Callable[[int], None] = lambda num_item: None
             """启动多个弹幕回调，参数为弹幕连接数量"""
-            self.multipleMessagesSuccessCallback: Callable[[], None] = lambda : None
+            self.multipleMessagesSuccessCallback: Callable[[], None] = lambda: None
             """多个弹幕启动成功回调，无参"""
-            self.messagesStopCallback: Callable[[], None] = lambda : None
+            self.messagesStopCallback: Callable[[], None] = lambda: None
             """收到弹幕停止回调，无参"""
-            self.interruptStartupCallback: Callable[[], None] = lambda : None
+            self.interruptStartupCallback: Callable[[], None] = lambda: None
             """启动时中断回调，无参"""
             self.abnormalStartupCallback: Callable = lambda e: None
             """启动时异常回调，参数为错误"""
-            self.stopConnectionCallback: Callable[[], None] = lambda : None
+            self.stopConnectionCallback: Callable[[], None] = lambda: None
             """停止连接回调，无参"""
-            self.connectionStoppedCallback: Callable[[], None] = lambda : None
+            self.connectionStoppedCallback: Callable[[], None] = lambda: None
             """连接已停止回调，无参"""
             self.connection_tasks = []  # 异步任务列表
             self.running = False
@@ -1674,10 +1692,10 @@ class BiliDanmu:
             except RuntimeError:
                 # 如果没有运行的事件循环，创建一个
                 asyncio.run(self.stop_async())
-                
-                
+
+
 class WebSocketServer:
-    def __init__(self, host='localhost', port=8765):
+    def __init__(self, host='0.0.0.0', port=8765):
         self.host = host
         self.port = port
         self.connected_clients: Set = set()
@@ -1685,19 +1703,18 @@ class WebSocketServer:
         self.danmu_processor = None
         self.running = False
         self._server_task: Optional[asyncio.Task] = None
-        self.registerCallback: Callable = lambda clients_count : None
+        self.registerCallback: Callable = lambda clients_count: None
         """注册新的客户端连接回调, 参数为注册用户数量"""
-        self.unregisterCallback: Callable = lambda clients_count : None
+        self.unregisterCallback: Callable = lambda clients_count: None
         """客户端断开回调, 参数为注册用户数量"""
         self.startServerCallback: Callable = lambda host, port: None
         """服务器启动回调, 参数为注册用户数量"""
-        self.serverCancelledCallback: Callable = lambda : None
+        self.serverCancelledCallback: Callable = lambda: None
         """服务器取消回调, 无参"""
         self.serverErroCallback: Callable = lambda erroMessage: None
         """服务器错误回调, 参数为错误信息"""
-        self.serverStopCallback: Callable = lambda : None
+        self.serverStopCallback: Callable = lambda: None
         """服务器停止回调, 无参"""
-
 
     async def register(self, websocket):
         """注册新的客户端连接"""
@@ -3491,22 +3508,9 @@ class BilibiliLogInRegister:
 
     def poll(self, qrcode_key: str) -> Dict[str, Any]:
         """
-        获取扫码登陆状态，登陆成功获取基础的cookies
-
-        Args:
-            qrcode_key: 扫描秘钥
-
-        Returns:
-            包含操作结果的字典：
-            - success: 操作是否成功
-            - message: 结果描述信息
-            - data: 成功时的数据（包含扫码状态和cookies信息）
-            - error: 失败时的错误信息
-            - status_code: HTTP状态码
-            - api_code: B站API返回的状态码
+        获取扫码登陆状态，登陆成功时返回包含 login_url 的数据（由调用方处理重定向）
         """
         try:
-            # 验证输入参数
             if not qrcode_key or not isinstance(qrcode_key, str):
                 return {
                     "success": False,
@@ -3517,16 +3521,15 @@ class BilibiliLogInRegister:
                 }
 
             api = f'https://passport.bilibili.com/x/passport-login/web/qrcode/poll?qrcode_key={qrcode_key}'
-
-            # 发送请求
+            log_request("Poll", "GET", api, self.headers)
             response = requests.get(
                 url=api,
                 headers=self.headers,
                 verify=self.verify_ssl,
                 timeout=10
             )
+            log_response("Poll", response)
 
-            # 检查HTTP状态码
             if response.status_code != 200:
                 return {
                     "success": False,
@@ -3537,7 +3540,6 @@ class BilibiliLogInRegister:
                     "response_text": response.text
                 }
 
-            # 解析响应
             try:
                 result = response.json()
             except ValueError as e:
@@ -3549,7 +3551,6 @@ class BilibiliLogInRegister:
                     "api_code": None
                 }
 
-            # 检查API返回状态码
             api_code = result.get("code", -1)
             if api_code != 0:
                 error_msg = result.get("message") or result.get("msg") or "未知错误"
@@ -3562,7 +3563,6 @@ class BilibiliLogInRegister:
                     "response_data": result
                 }
 
-            # 检查数据是否存在
             data = result.get("data")
             if not data:
                 return {
@@ -3574,21 +3574,16 @@ class BilibiliLogInRegister:
                     "response_data": result
                 }
 
-            # 提取扫码状态码和消息
             scan_code = data.get("code")
             scan_message = data.get("message", "")
-
-            # 根据扫码状态码判断扫码状态
             status_mapping = {
                 0: "扫码登录成功",
                 86038: "二维码已失效",
                 86090: "二维码已扫码未确认",
                 86101: "未扫码"
             }
-
             status_message = status_mapping.get(scan_code, f"未知状态码: {scan_code}")
 
-            # 构建返回数据
             result_data = {
                 "scan_code": scan_code,
                 "scan_message": scan_message,
@@ -3598,12 +3593,11 @@ class BilibiliLogInRegister:
                 "timestamp": data.get("timestamp", 0)
             }
 
-            # 如果扫码成功，提取cookies信息
+            # 登录成功时，将登录回调 URL 也返回，由调用方自行处理重定向
             if scan_code == 0:
-                url = data.get("url", "")
-                # 从URL中提取cookies参数
-                cookies_info = self._extract_cookies_from_url(url)
-                result_data.update(cookies_info)
+                login_url = data.get("url", "")
+                result_data["login_url"] = login_url
+                # 注意：此时不提取 cookie，让调用方通过 session 获取完整 cookie
 
             return {
                 "success": True,
@@ -3685,86 +3679,74 @@ class ImproveCookies:
 
     def fetch_buvid3_and_bnut(self) -> Dict[str, Any]:
         """
-        获取buvid3和b_nut认证信息
-
-        Returns:
-            包含操作结果的字典：
-            - success: 操作是否成功
-            - message: 结果描述信息
-            - data: 成功时的数据（包含buvid3和b_nut）
-            - error: 失败时的错误信息
-            - status_code: HTTP状态码（如果有）
+        获取 buvid3 和 b_nut 认证信息（模拟 curl 行为）
         """
         try:
-            response = requests.get(
-                url='https://www.bilibili.com/',
-                headers=self.headers,
-                verify=self.verify_ssl,
-                timeout=30
+            # 使用与 curl -I "https://www.bilibili.com/" -A "awa" 完全一致的请求头
+            headers = {
+                'User-Agent': 'awa',  # 关键！与 curl 命令相同
+                'Accept': '*/*',
+                'Accept-Language': 'zh-CN,zh;q=0.9',
+                'Connection': 'keep-alive',
+            }
+            # 发送 HEAD 请求，与 curl -I 一致
+            response = requests.head(
+                'https://www.bilibili.com/',
+                headers=headers,
+                verify=False,  # 忽略证书验证
+                timeout=30,
+                allow_redirects=True  # 允许重定向，以便捕获所有 Set-Cookie
             )
 
-            # 检查HTTP状态码
-            if response.status_code != 200:
-                return {
-                    "success": False,
-                    "message": "获取认证信息失败",
-                    "error": f"HTTP错误: {response.status_code}",
-                    "status_code": response.status_code,
-                    "response_text": response.text
-                }
+            # 收集所有响应（包括重定向）中的 Set-Cookie
+            cookies_dict = {}
+            all_responses = [response] + response.history
+            for resp in all_responses:
+                set_cookie_headers = resp.headers.get('Set-Cookie', '')
+                if set_cookie_headers:
+                    # 可能包含多个 Set-Cookie，用逗号分隔（但注意有些 cookie 值内包含逗号，简单处理）
+                    # 更稳妥：遍历 resp.cookies，但有时 resp.cookies 不完整
+                    for cookie in resp.cookies:
+                        cookies_dict[cookie.name] = cookie.value
+                    # 同时尝试解析原始的 Set-Cookie 头
+                    for part in set_cookie_headers.split(','):
+                        if '=' in part:
+                            key, value = part.split('=', 1)
+                            key = key.strip()
+                            value = value.split(';')[0].strip()
+                            if key and value:
+                                cookies_dict[key] = value
 
-            cookies_dict = response.cookies.get_dict()
-
-            # 检查是否成功获取到必要的cookies
-            required_cookies = ["buvid3", "b_nut"]
-            missing_cookies = [cookie for cookie in required_cookies if cookie not in cookies_dict]
-
-            if missing_cookies:
+            # 检查必须字段
+            required = ['buvid3', 'b_nut']
+            missing = [k for k in required if k not in cookies_dict]
+            if missing:
                 return {
                     "success": False,
                     "message": "获取认证信息不完整",
-                    "error": f"缺少必要的cookies: {', '.join(missing_cookies)}",
+                    "error": f"缺少: {', '.join(missing)}",
                     "status_code": response.status_code,
-                    "available_cookies": list(cookies_dict.keys())
+                    "available_cookies": list(cookies_dict.keys()),
+                    "data": None
                 }
 
             return {
                 "success": True,
                 "message": "认证信息获取成功",
                 "data": {
-                    "buvid3": cookies_dict["buvid3"],
-                    "b_nut": cookies_dict["b_nut"]
+                    "buvid3": cookies_dict['buvid3'],
+                    "b_nut": cookies_dict['b_nut']
                 },
                 "status_code": response.status_code
             }
 
-        except requests.exceptions.Timeout:
-            return {
-                "success": False,
-                "message": "获取认证信息失败",
-                "error": "请求超时",
-                "status_code": None
-            }
-        except requests.exceptions.ConnectionError:
-            return {
-                "success": False,
-                "message": "获取认证信息失败",
-                "error": "网络连接错误",
-                "status_code": None
-            }
-        except requests.exceptions.RequestException as e:
-            return {
-                "success": False,
-                "message": "获取认证信息失败",
-                "error": f"网络请求异常: {str(e)}",
-                "status_code": None
-            }
         except Exception as e:
             return {
                 "success": False,
-                "message": "获取认证信息过程中发生未知错误",
+                "message": "获取认证信息失败",
                 "error": str(e),
-                "status_code": None
+                "status_code": None,
+                "data": None
             }
 
     def fetch_buvid3_info(self) -> Dict[str, Any]:
@@ -3861,94 +3843,53 @@ class ImproveCookies:
             }
 
     def get_buvid_info(self) -> Dict[str, Any]:
-        """
-        获取B站buvid3和buvid4信息
-
-        Returns:
-            包含buvid信息的字典：
-            - success: 操作是否成功
-            - message: 结果描述信息
-            - data: 成功时的数据（包含b_3和b_4字段）
-            - error: 失败时的错误信息
-            - status_code: HTTP状态码（如果有）
-        """
         try:
-            # 发送API请求获取buvid信息
             response = requests.get(
                 url="https://api.bilibili.com/x/frontend/finger/spi",
                 headers=self.headers,
                 verify=self.verify_ssl,
                 timeout=30
             )
-
-            # 检查HTTP状态码
             if response.status_code != 200:
                 return {
                     "success": False,
                     "message": "获取buvid信息失败",
                     "error": f"HTTP错误: {response.status_code}",
                     "status_code": response.status_code,
-                    "response_text": response.text
+                    "data": None
                 }
-
-            # 解析响应
             result = response.json()
-
-            # 检查B站API返回状态
             if result.get("code") != 0:
                 return {
                     "success": False,
                     "message": "B站API返回错误",
                     "error": result.get("message", "未知错误"),
                     "status_code": response.status_code,
-                    "api_code": result.get("code")
+                    "api_code": result.get("code"),
+                    "data": None
                 }
-
-            # 检查数据是否存在
             if "data" not in result:
                 return {
                     "success": False,
                     "message": "API响应格式异常",
                     "error": "响应中缺少必要的数据字段",
                     "status_code": response.status_code,
-                    "response_data": result
+                    "response_data": result,
+                    "data": None
                 }
-
-            # 成功返回
             return {
                 "success": True,
                 "message": "buvid信息获取成功",
                 "data": result["data"],
                 "status_code": response.status_code
             }
-
-        except requests.exceptions.Timeout:
-            return {
-                "success": False,
-                "message": "获取buvid信息失败",
-                "error": "请求超时",
-                "status_code": None
-            }
-        except requests.exceptions.ConnectionError:
-            return {
-                "success": False,
-                "message": "获取buvid信息失败",
-                "error": "网络连接错误",
-                "status_code": None
-            }
-        except requests.exceptions.RequestException as e:
-            return {
-                "success": False,
-                "message": "获取buvid信息失败",
-                "error": f"网络请求异常: {str(e)}",
-                "status_code": None
-            }
         except Exception as e:
             return {
                 "success": False,
                 "message": "获取buvid信息过程中发生未知错误",
                 "error": str(e),
-                "status_code": None
+                "status_code": None,
+                "data": None
             }
 
 
@@ -6396,7 +6337,6 @@ class BilibiliSpecialApiManager:
                     "message": "已获取所有页数据",
                     "data": initial_data
                 }
-
 
             all_list_data = initial_data.get("list", [])
             all_special_list_data = initial_data.get("special_list", [])
@@ -9294,9 +9234,10 @@ class BilibiliCSRFAuthenticator:
                 "api_code": None
             }
 
+
 @lru_cache(maxsize=None)
 def get_w_s_a():
-    if get_default_user()["value"]:
+    if get_b_u_c_m().get_default_user_id():
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
                           '(KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
@@ -9307,10 +9248,12 @@ def get_w_s_a():
         w_s_a = None
     return w_s_a
 
+
 @lru_cache(maxsize=None)
 def get_b_u_c_m():
     b_u_c_m = BilibiliUserConfigManager(config_path=GlobalVariableOfData.scriptsUsersConfigFilepath)
     return b_u_c_m
+
 
 @lru_cache(maxsize=None)
 def get_b_l_i_r():
@@ -9323,6 +9266,7 @@ def get_b_l_i_r():
     b_l_i_r = BilibiliLogInRegister(headers, GlobalVariableOfData.sslVerification)
     return b_l_i_r
 
+
 @lru_cache(maxsize=None)
 def get_i_c():
     headers = {
@@ -9333,6 +9277,7 @@ def get_i_c():
     # 初始化API对象
     i_c = ImproveCookies(headers, GlobalVariableOfData.sslVerification)
     return i_c
+
 
 @lru_cache(maxsize=None)
 def get_b_a_g():
@@ -9345,9 +9290,10 @@ def get_b_a_g():
     b_a_g = BilibiliApiGeneric(headers, GlobalVariableOfData.sslVerification)
     return b_a_g
 
+
 @lru_cache(maxsize=None)
 def get_b_s_a_m():
-    if get_default_user()["value"]:
+    if get_b_u_c_m().get_default_user_id():
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
                           '(KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
@@ -9359,9 +9305,10 @@ def get_b_s_a_m():
         b_r_m = None
     return b_r_m
 
+
 @lru_cache(maxsize=None)
 def get_b_l_d_m():
-    if get_default_user()["value"]:
+    if get_b_u_c_m().get_default_user_id():
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
                           '(KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
@@ -9372,9 +9319,10 @@ def get_b_l_d_m():
         dm = None
     return dm
 
+
 @lru_cache(maxsize=None)
 def get_b_csrf_a():
-    if get_default_user()["value"]:
+    if get_b_u_c_m().get_default_user_id():
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
                           '(KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3',
@@ -9386,16 +9334,18 @@ def get_b_csrf_a():
         b_csrf_a = None
     return b_csrf_a
 
+
 @lru_cache(maxsize=None)
 def get_c_d_m():
     # 创建用户常用数据实例
     c_d_m = CommonDataManager(Path(GlobalVariableOfData.scriptsDataDirpath) / "commonData.json")
     return c_d_m
 
+
 @lru_cache(maxsize=None)
-def get_uid_nickname_dict_list() -> List[Dict[str, str]]:
+def get_uid_nickname_dict():
     # 获取 用户数据文件中保存的用户，并在用户过期后删除用户
-    uid_nickname_dict = []
+    uid_nickname_dict = {}
     """账号字典"""
     for uid_dict in get_b_u_c_m().get_all_users()["data"]["users"]:
         uid = uid_dict["user_id"]
@@ -9405,47 +9355,41 @@ def get_uid_nickname_dict_list() -> List[Dict[str, str]]:
             'cookie': Tools.dict_to_cookie_string(get_b_u_c_m().get_user_cookies(int(uid))["data"])
         }
         nav_info = BilibiliSpecialApiManager(headers, GlobalVariableOfData.sslVerification).get_nav_info()
-        if nav_info["success"]:
-            uid_nickname_dict.append({
-                "label": get_b_a_g().get_bilibili_user_card(uid)['data']['data']['card']['name'],
-                "value": uid
-            })
+        print(nav_info)
+        is_login = nav_info["success"]
+        if is_login:
+            uid_nickname_dict[get_b_a_g().get_bilibili_user_card(uid)['data']['data']['card']['name']] = uid
         else:
             log_save(obs.LOG_INFO, f"❌{get_b_a_g().get_bilibili_user_card(uid)['data']['data']['card']['name']}过期")
             if get_b_u_c_m().get_default_user_id() == uid:
                 get_b_u_c_m().clear_default_user()
             get_b_u_c_m().delete_user(int(uid))
     if not get_b_u_c_m().get_user_cookies()["success"]:
-        uid_nickname_dict.append({
-            "label": '添加或选择一个账号登录',
-            "value": '-1'
-        })
-    log_save(obs.LOG_INFO, f"║║载入账号：{uid_nickname_dict}")
+        uid_nickname_dict['添加或选择一个账号登录'] = '-1'
+    log_save(obs.LOG_INFO, f"║║载入账号字典：{uid_nickname_dict}")
     return uid_nickname_dict
 
+
 @lru_cache(maxsize=None)
-def get_default_user() -> Dict[str, str]:
-    """默认用户的昵称和id"""
-    default_user = {}
-    uid_nickname_dict_list = get_uid_nickname_dict_list()
-    default_user_id = get_b_u_c_m().get_default_user_id()
-    for uid_nickname_dict in uid_nickname_dict_list:
-        if not default_user_id:
-            break
-        if default_user_id == uid_nickname_dict["value"]:
-            default_user = {"label": uid_nickname_dict["label"], "value": default_user_id}
-            break
-    if default_user:
-        log_save(obs.LOG_INFO, f"║║用户：{default_user['label']} 已登录")
+def get_default_user_nickname():
+    # 获取 '登录用户' 的昵称
+    if get_b_u_c_m().get_default_user_id():
+        default_user_nickname: Optional[str] = list(get_uid_nickname_dict().keys())[
+            list(get_uid_nickname_dict().values()).index(get_b_u_c_m().get_default_user_id())]
+        """登录用户的昵称，没有登录则为None"""
+        log_save(obs.LOG_INFO, f"║║用户：{default_user_nickname} 已登录")
     else:
+        default_user_nickname: Optional[str] = None
+        """登录用户的昵称，没有登录则为None"""
         log_save(obs.LOG_INFO, f"║║用户：⚠️未登录账号")
-    return default_user
+    return default_user_nickname
+
 
 @lru_cache(maxsize=None)
 def get_room_info_old():
     # 获取 '登录用户' 对应的直播间基础信息
-    if get_default_user()["value"]:
-        room_info_old = get_b_a_g().get_room_info_old(int(get_default_user()["value"]))
+    if get_b_u_c_m().get_default_user_id():
+        room_info_old = get_b_a_g().get_room_info_old(int(get_b_u_c_m().get_default_user_id()))
         """直播间基础信息"""
         log_save(obs.LOG_INFO, f"║║登录账户 的 直播间基础信息：{room_info_old}")
     else:
@@ -9454,10 +9398,11 @@ def get_room_info_old():
         log_save(obs.LOG_INFO, f"║║登录账户 的 直播间基础信息：⚠️未登录账号")
     return room_info_old
 
+
 @lru_cache(maxsize=None)
 def get_room_status():
     # 获取 '登录用户' 的 直播间状态
-    if get_default_user()["value"]:
+    if get_b_u_c_m().get_default_user_id():
         room_status = get_room_info_old()["data"]["roomStatus"]
         """登录用户的直播间存在状态"""
         if room_status:
@@ -9470,10 +9415,11 @@ def get_room_status():
         log_save(obs.LOG_INFO, f"║║登录账户 的 直播间状态：⚠️未登录账号")
     return room_status
 
+
 @lru_cache(maxsize=None)
 def get_room_id():
     # 获取 '登录用户' 的 直播间id
-    if get_default_user()["value"]:
+    if get_b_u_c_m().get_default_user_id():
         if get_room_status():
             room_id = get_room_info_old()["data"]["roomid"]
             """登录用户的直播间id"""
@@ -9488,10 +9434,11 @@ def get_room_id():
         log_save(obs.LOG_INFO, f"║║登录账户 的 直播间id：⚠️未登录账号")
     return room_id
 
+
 @lru_cache(maxsize=None)
 def get_room_base_info():
     # 获取 '登录用户' 直播间基本信息
-    if get_default_user()["value"]:
+    if get_b_u_c_m().get_default_user_id():
         if get_room_status():
             room_base_info = get_b_a_g().get_room_base_info(get_room_id())["data"]
             """直播间基本信息"""
@@ -9506,10 +9453,11 @@ def get_room_base_info():
         log_save(obs.LOG_INFO, f"║║登录账户 的 直播间基本信息：⚠️未登录账号")
     return room_base_info
 
+
 @lru_cache(maxsize=None)
 def get_room_title():
     # 获取 '登录用户' 直播间标题
-    if get_default_user()["value"]:
+    if get_b_u_c_m().get_default_user_id():
         if get_room_status():
             room_title = get_room_base_info()["title"]
             """登录用户直播间标题"""
@@ -9524,39 +9472,33 @@ def get_room_title():
         log_save(obs.LOG_INFO, f"║║登录账户 的 直播间标题：⚠️未登录账号")
     return room_title
 
-@lru_cache(maxsize=None)
-def get_common_title_number_dict_list() -> List[Dict[str, str]]:
-    """
-    常用直播间标题
-    Returns:
-        列表元素:
-            - item["label"]: 组合框选项名
-            - item["value"]: 组合框选项值
 
-    """
+@lru_cache(maxsize=None)
+def get_common_title4number():
     # 添加当前直播间标题 到 常用直播间标 题配置文件
-    common_title_number_dict_list = []
-    if get_default_user()["value"]:
+    common_title4number = {}
+    """常用直播间标题】{'0': 't1', '1': 't2', '2': 't3',}"""
+    if get_b_u_c_m().get_default_user_id():
         if get_room_status():
-            get_c_d_m().add_data(get_default_user()["value"], "title", get_room_title())
-            for number, commonTitle in enumerate(get_c_d_m().get_data(get_default_user()["value"], "title")):
-                common_title_number_dict_list.append({
-                    "label": commonTitle,
-                    "value": str(number)
-                })
-            log_save(obs.LOG_INFO, f"║║登录账户 的 常用直播间标题：{common_title_number_dict_list}")
+            get_c_d_m().add_data(get_b_u_c_m().get_default_user_id(), "title", get_room_title())
+            for number, commonTitle in enumerate(get_c_d_m().get_data(get_b_u_c_m().get_default_user_id(), "title")):
+                common_title4number[commonTitle] = str(number)
+            log_save(obs.LOG_INFO, f"║║登录账户 的 常用直播间标题：{common_title4number}")
         else:
             log_save(obs.LOG_INFO, f"║║登录账户 的 常用直播间标题：⚠️无直播间")
     else:
         log_save(obs.LOG_INFO, f"║║登录账户 的 常用直播间标题：⚠️未登录账号")
-    return common_title_number_dict_list
+    return common_title4number
+
 
 @lru_cache(maxsize=None)
 def get_room_news():
     # 获取 直播间公告
-    if get_default_user()["value"]:
+    if get_b_u_c_m().get_default_user_id():
         if get_room_status():
-            room_news = get_b_s_a_m().get_room_news(int(get_default_user()["value"]), get_b_s_a_m().get_room_highlight_info()["data"]["room_id"])["data"]["content"]
+            room_news = get_b_s_a_m().get_room_news(int(get_b_u_c_m().get_default_user_id()),
+                                                    get_b_s_a_m().get_room_highlight_info()["data"]["room_id"])["data"][
+                "content"]
             """直播间公告"""
             log_save(obs.LOG_INFO, f"║║登录账户 的 直播间公告：{room_news}")
         else:
@@ -9569,10 +9511,11 @@ def get_room_news():
         log_save(obs.LOG_INFO, f"║║登录账户 的 直播间公告：⚠️未登录账号")
     return room_news
 
+
 @lru_cache(maxsize=None)
 def get_area():
     # 获取 '登录用户' 直播间的分区
-    if get_default_user()["value"]:
+    if get_b_u_c_m().get_default_user_id():
         if get_room_status():
             area = {
                 "parent_area_id": str(get_room_base_info()["parent_area_id"]),
@@ -9592,10 +9535,11 @@ def get_area():
         log_save(obs.LOG_INFO, f"║║登录账户 的 直播间分区数据：⚠️未登录账号")
     return area
 
+
 @lru_cache(maxsize=None)
 def get_common_areas():
     # 获取 '登录用户' 直播间 常用分区信息
-    if get_default_user()["value"]:
+    if get_b_u_c_m().get_default_user_id():
         if get_room_status():
             common_areas = get_b_a_g().get_anchor_common_areas(get_room_id())["data"]
             """获取 '登录用户' 直播间 常用分区信息】[{"id": "255", "name": "明日方舟", "parent_id": "3", "parent_name": "手游",}, ]"""
@@ -9610,12 +9554,13 @@ def get_common_areas():
         log_save(obs.LOG_INFO, f"║║登录账户 的 常用分区信息：⚠️未登录账号")
     return common_areas
 
+
 @lru_cache(maxsize=None)
 def get_common_area_id_dict_str4common_area_name_dict_str():
     # 获取 '登录用户' 常用直播间分区字典
     common_area_id_dict_str4common_area_name_dict_str = {}
     """登录用户的常用直播间分区字典】{'{parent_id: id}': '{parent_name: name}', }"""
-    if get_default_user()["value"]:
+    if get_b_u_c_m().get_default_user_id():
         if get_room_status():
             if get_common_areas():
                 for common_area in get_common_areas():
@@ -9634,10 +9579,11 @@ def get_common_area_id_dict_str4common_area_name_dict_str():
         log_save(obs.LOG_INFO, f"║║登录账户 的 常用直播间分区：⚠️未登录账号")
     return common_area_id_dict_str4common_area_name_dict_str
 
+
 @lru_cache(maxsize=None)
 def get_area_obj_data_list():
     # 获取 B站直播分区信息
-    if get_default_user()["value"]:
+    if get_b_u_c_m().get_default_user_id():
         area_obj_data_list = get_b_a_g().get_area_obj_list()
         """B站直播分区信息"""
         log_save(obs.LOG_INFO, f"║║获取B站直播分区信息：{area_obj_data_list}")
@@ -9647,12 +9593,13 @@ def get_area_obj_data_list():
         log_save(obs.LOG_INFO, f"║║获取B站直播分区信息：⚠️未登录账号")
     return area_obj_data_list
 
+
 @lru_cache(maxsize=None)
 def get_parent_live_area_name4parent_live_area_id():
     # 获取 直播间父分区数据
     parent_live_area_name4parent_live_area_id = {}
     """直播间父分区数据"""
-    if get_default_user()["value"]:
+    if get_b_u_c_m().get_default_user_id():
         if get_room_status():
             for AreaObjData in get_area_obj_data_list()['data']:
                 parent_live_area_name4parent_live_area_id[AreaObjData["name"]] = str(AreaObjData["id"])
@@ -9667,12 +9614,13 @@ def get_parent_live_area_name4parent_live_area_id():
         log_save(obs.LOG_INFO, f"║║获取 直播间父分区数据：⚠️未登录账号")
     return parent_live_area_name4parent_live_area_id
 
+
 @lru_cache(maxsize=None)
 def get_sub_live_area_name4sub_live_area_id():
     # 获取 登录账户 的 直播间父分区 对应的 直播间子分区数据
     sub_live_area_name4sub_live_area_id = {}
     """登录账户 的 直播间父分区 对应的 直播间子分区数据"""
-    if get_default_user()["value"]:
+    if get_b_u_c_m().get_default_user_id():
         if get_room_status():
             if get_area():
                 for AreaObjData in get_area_obj_data_list()["data"]:
@@ -9689,10 +9637,11 @@ def get_sub_live_area_name4sub_live_area_id():
     log_save(obs.LOG_INFO, f"║║获取 直播间父分区 对应的 直播间子分区数据：{sub_live_area_name4sub_live_area_id}")
     return sub_live_area_name4sub_live_area_id
 
+
 @lru_cache(maxsize=None)
 def get_live_status():
     # 获取 '登录用户' 的 直播状态
-    if get_default_user()["value"]:
+    if get_b_u_c_m().get_default_user_id():
         if get_room_status():
             live_status = get_room_info_old()["data"]["liveStatus"]
             """登录用户的直播状态】0：未开播 1：直播中"""
@@ -9710,10 +9659,11 @@ def get_live_status():
         log_save(obs.LOG_INFO, f"║║登录账户 的 直播状态：⚠️未登录账号")
     return live_status
 
+
 @lru_cache(maxsize=None)
 def get_reserve_list():
     # 登录用户的直播预约列表信息
-    if get_default_user()["value"]:
+    if get_b_u_c_m().get_default_user_id():
         if get_room_status():
             reserve_list = get_b_s_a_m().get_reserve_list()["data"]["list"]
             """获取 '登录用户' 的 直播预约列表信息"""
@@ -9728,12 +9678,13 @@ def get_reserve_list():
         log_save(obs.LOG_INFO, f"║║登录账户 的 直播预约列表信息：⚠️未登录账号")
     return reserve_list
 
+
 @lru_cache(maxsize=None)
 def get_reserve_name4reserve_sid():
     # 登录用户的直播预约字典
     reserve_name4reserve_sid = {}
     """获取 '登录用户' 的 直播预约字典"""
-    if get_default_user()["value"]:
+    if get_b_u_c_m().get_default_user_id():
         if get_room_status():
             if get_reserve_list():
                 for reserve in get_reserve_list():
@@ -9752,40 +9703,47 @@ def get_reserve_name4reserve_sid():
         log_save(obs.LOG_INFO, f"║║登录账户 的 直播预约：⚠️未登录账号")
     return reserve_name4reserve_sid
 
+
 @lru_cache(maxsize=None)
 def get_common_danmu_setting():
     """
     弹幕客户端创建数/弹幕客户端创建间隔/是否显示进房消息/是否显示粉丝徽章/是否显示其他的粉丝徽章/是否显示未点亮的粉丝徽章/换行显示/是否标记管理员，is_admin不受影响/是否显示时间/防重复的缓存条数/防重复的缓存时长/头像大小/粉丝勋章文字大小/内容文字大小/时间文字大小
     """
     danmu_setting_list = []
-    if get_default_user()["value"]:
-        danmu_client_creations_number = get_c_d_m().get_data(get_default_user()["value"], "danmuSetting")
+    if get_b_u_c_m().get_default_user_id():
+        danmu_client_creations_number = get_c_d_m().get_data(get_b_u_c_m().get_default_user_id(), "danmuSetting")
         if not danmu_client_creations_number:
             setting = "20/300/1/1/1/1/1/0/0/20/3/16/14/14/14"
-            get_c_d_m().add_data(get_default_user()["value"], "danmuSetting", setting, 1)
-        danmu_setting_list = [int(item) for item in get_c_d_m().get_data(get_default_user()["value"], "danmuSetting")[0].split("/")]
+            get_c_d_m().add_data(get_b_u_c_m().get_default_user_id(), "danmuSetting", setting, 1)
+        danmu_setting_list = [int(item) for item in
+                              get_c_d_m().get_data(get_b_u_c_m().get_default_user_id(), "danmuSetting")[0].split("/")]
     return danmu_setting_list
+
 
 @lru_cache(maxsize=None)
 def get_common_danmu_roomid_dict():
     danmu_roomid_uname_dict = {}
-    if get_default_user()["value"]:
-        common_danmu_roomid = get_c_d_m().get_data(get_default_user()["value"], "danmuRoomid")
+    if get_b_u_c_m().get_default_user_id():
+        common_danmu_roomid = get_c_d_m().get_data(get_b_u_c_m().get_default_user_id(), "danmuRoomid")
         if common_danmu_roomid:
             for danmu_roomid in common_danmu_roomid:
-                danmu_roomid_uname_dict[get_b_a_g().get_room_base_info(int(danmu_roomid))["data"]['uname']] = str(danmu_roomid)
+                danmu_roomid_uname_dict[get_b_a_g().get_room_base_info(int(danmu_roomid))["data"]['uname']] = str(
+                    danmu_roomid)
         else:
             if get_room_status():
-                get_c_d_m().add_data(get_default_user()["value"], "danmuRoomid", str(get_room_id()), 99)
-                danmu_roomid_uname_dict[get_b_a_g().get_room_base_info(int(get_room_id()))["data"]['uname']] = str(get_room_id())
+                get_c_d_m().add_data(get_b_u_c_m().get_default_user_id(), "danmuRoomid", str(get_room_id()), 99)
+                danmu_roomid_uname_dict[get_b_a_g().get_room_base_info(int(get_room_id()))["data"]['uname']] = str(
+                    get_room_id())
     return danmu_roomid_uname_dict
+
 
 @lru_cache(maxsize=None)
 def get_common_danmu_web_socket_server_prot():
-    danmu_web_socket_server_prot = get_c_d_m().get_data(get_default_user()["value"], "danmuWssProt")
+    danmu_web_socket_server_prot = get_c_d_m().get_data(get_b_u_c_m().get_default_user_id(), "danmuWssProt")
     if not danmu_web_socket_server_prot:
-        get_c_d_m().add_data(get_default_user()["value"], "danmuWssProt", "8765", 1)
-    return get_c_d_m().get_data(get_default_user()["value"], "danmuWssProt")[0]
+        get_c_d_m().add_data(get_b_u_c_m().get_default_user_id(), "danmuWssProt", "8765", 1)
+    return get_c_d_m().get_data(get_b_u_c_m().get_default_user_id(), "danmuWssProt")[0]
+
 
 @lru_cache(maxsize=None)
 def get_common_danmu_own_big_expression():
@@ -9796,27 +9754,33 @@ def get_common_danmu_own_big_expression():
     image_files = Tools.list_files_by_extension(str(own_big_expression), image_extensions)
     for image_file in image_files:
         danmu_own_big_expression_dict[image_file.split(".")[0]] = str(own_big_expression / image_file)
-    get_c_d_m().add_data(get_default_user()["value"], "danmuOwnImg", json.dumps(danmu_own_big_expression_dict, ensure_ascii=False), 1)
-    return json.loads(get_c_d_m().get_data(get_default_user()["value"], "danmuOwnImg")[0])
+    get_c_d_m().add_data(get_b_u_c_m().get_default_user_id(), "danmuOwnImg",
+                         json.dumps(danmu_own_big_expression_dict, ensure_ascii=False), 1)
+    return json.loads(get_c_d_m().get_data(get_b_u_c_m().get_default_user_id(), "danmuOwnImg")[0])
+
 
 @lru_cache(maxsize=None)
 def get_common_danmu_web_css():
-    danmu_web_css = get_c_d_m().get_data(get_default_user()["value"], "danmuWebCss")
+    danmu_web_css = get_c_d_m().get_data(get_b_u_c_m().get_default_user_id(), "danmuWebCss")
     if not danmu_web_css:
         get_c_d_m().add_data(
-            get_default_user()["value"],
+            get_b_u_c_m().get_default_user_id(),
             "danmuWebCss",
             "body { background-color: rgba(0, 0, 0, 0); margin: 0px auto; overflow: hidden; }",
             1
         )
-    return get_c_d_m().get_data(get_default_user()["value"], "danmuWebCss")[0]
+    return get_c_d_m().get_data(get_b_u_c_m().get_default_user_id(), "danmuWebCss")[0]
+
 
 @lru_cache(maxsize=None)
 def get_common_danmu_emoticons():
     danmu_emoticons_dict = {}
-    for emoji in get_b_s_a_m().get_room_emoticons(int(str(list(get_common_danmu_roomid_dict().values())[0])))["data"]["data"][0]["emoticons"]:
+    for emoji in \
+    get_b_s_a_m().get_room_emoticons(int(str(list(get_common_danmu_roomid_dict().values())[0])))["data"]["data"][0][
+        "emoticons"]:
         danmu_emoticons_dict[emoji["emoji"]] = json.dumps(emoji, ensure_ascii=False)
     return danmu_emoticons_dict
+
 
 @lru_cache(maxsize=None)
 def get_common_script_setting():
@@ -9824,7 +9788,7 @@ def get_common_script_setting():
     是否联动推流和开播/是否联动推流和停播/是否自动填写推流服务器/是否每次重置弹幕源
     """
     script_setting_list = []
-    if get_default_user()["value"]:
+    if get_b_u_c_m().get_default_user_id():
         danmu_client_creations_number = get_c_d_m().get_data("system", "scriptSetting")
         if not danmu_client_creations_number:
             setting = "0/0/0/0"
@@ -9832,17 +9796,19 @@ def get_common_script_setting():
         script_setting_list = [int(item) for item in get_c_d_m().get_data("system", "scriptSetting")[0].split("/")]
     return script_setting_list
 
+
 @lru_cache(maxsize=None)
 def get_common_widget_visibility() -> dict[str, int]:
     widget_visibility_dict = {}
-    widget_visibility_setting = get_c_d_m().get_data(get_default_user()["value"], "widgetVisibility")
+    widget_visibility_setting = get_c_d_m().get_data(get_b_u_c_m().get_default_user_id(), "widgetVisibility")
     if not widget_visibility_setting:
         widget_visibility_dict_ = json.dumps({}, ensure_ascii=False)
-        get_c_d_m().add_data(get_default_user()["value"], "widgetVisibility", widget_visibility_dict_, 1)
-    widget_visibility_dict_list = get_c_d_m().get_data(get_default_user()["value"], "widgetVisibility")
+        get_c_d_m().add_data(get_b_u_c_m().get_default_user_id(), "widgetVisibility", widget_visibility_dict_, 1)
+    widget_visibility_dict_list = get_c_d_m().get_data(get_b_u_c_m().get_default_user_id(), "widgetVisibility")
     for widget_visibility in json.loads(widget_visibility_dict_list[0]):
         widget_visibility_dict[widget_visibility] = int(json.loads(widget_visibility_dict_list[0])[widget_visibility])
     return widget_visibility_dict
+
 
 def clear_cache():
     # 清除函数缓存
@@ -9854,14 +9820,14 @@ def clear_cache():
     get_b_l_d_m.cache_clear()
     get_b_s_a_m.cache_clear()
     get_c_d_m.cache_clear()
-    get_uid_nickname_dict_list.cache_clear()
-    get_default_user.cache_clear()
+    get_uid_nickname_dict.cache_clear()
+    get_default_user_nickname.cache_clear()
     get_room_info_old.cache_clear()
     get_room_status.cache_clear()
     get_room_id.cache_clear()
     get_room_base_info.cache_clear()
     get_room_title.cache_clear()
-    get_common_title_number_dict_list.cache_clear()
+    get_common_title4number.cache_clear()
     get_room_news.cache_clear()
     get_area.cache_clear()
     get_common_areas.cache_clear()
@@ -9880,6 +9846,7 @@ def clear_cache():
     get_common_danmu_emoticons.cache_clear()
     get_common_script_setting.cache_clear()
     get_common_widget_visibility.cache_clear()
+
 
 # ====================================================================================================================
 
@@ -9949,7 +9916,6 @@ class GlobalVariableOfData:
     """弹幕日志"""
     danmuLogDir: Optional[Path] = None
     """日志文件文件夹"""
-
 
 
 class ExplanatoryDictionary:
@@ -10396,7 +10362,7 @@ class Widget:
             """组合框显示的文字"""
             Value: str = ""
             """组合框显示的文字对应的值"""
-            DictionaryList: List[Dict[str, Any]] = field(default_factory=dict)  # 数据字典
+            Dictionary: Dict[str, Any] = field(default_factory=dict)  # 数据字典
             """组合框选项字典"""
 
             def __repr__(self) -> str:
@@ -10748,7 +10714,7 @@ class Widget:
         for basic_types_controls in self.widget_dict_all:
             log_save(obs.LOG_INFO, f"{basic_types_controls}")
             for Ps in self.widget_dict_all[basic_types_controls]:
-                if Ps not in  self.props_Collection:
+                if Ps not in self.props_Collection:
                     self.props_Collection[Ps] = set()
                 log_save(obs.LOG_INFO, f"\t{Ps}")
                 for name in self.widget_dict_all[basic_types_controls][Ps]:
@@ -10767,7 +10733,8 @@ class Widget:
                     if obj.ControlType in ["Group"]:
                         obj.GroupProps = self.widget_dict_all[basic_types_controls][Ps][name]["GroupProps"]
                     if obj.ControlType in ["TextBox", "ComboBox"]:
-                        obj.LongDescription = self.widget_dict_all[basic_types_controls][Ps][name].get("LongDescription", "")
+                        obj.LongDescription = self.widget_dict_all[basic_types_controls][Ps][name].get(
+                            "LongDescription", "")
                     if obj.ControlType in ["DigitalDisplay"]:
                         obj.Suffix = self.widget_dict_all[basic_types_controls][Ps][name]["Suffix"]
                     if obj.ControlType in ["PathBox"]:
@@ -10865,7 +10832,8 @@ def property_modified(t: str) -> bool:
             return ButtonFunction.button_function_true_live_appointment_minute()
         elif t == "enter_room_display_checkBox":
             return ButtonFunction.button_function_setting_danmu_data()
-        elif t in [group_info["Name"] for category in widget.widget_Group_dict.values() for group_info in category.values() if "Name" in group_info]:
+        elif t in [group_info["Name"] for category in widget.widget_Group_dict.values() for group_info in
+                   category.values() if "Name" in group_info]:
             return ButtonFunction.button_function_set_widget_visibility()
         else:
             log_save(obs.LOG_INFO, t)
@@ -10897,10 +10865,7 @@ def script_defaults(settings):  # 设置其默认值
         log_save(obs.LOG_ERROR, f"❌{network_connection_info.get('error', '')}")
         return None
     ssl_verification_info = Tools.check_ssl_verification()
-    # GlobalVariableOfData.sslVerification = ssl_verification_info['success']
-    GlobalVariableOfData.sslVerification = bool(
-        ssl_verification_info.get('data', {}).get('ssl_verification_enabled', True)
-    )
+    GlobalVariableOfData.sslVerification = ssl_verification_info['success']
     log_save(obs.LOG_DEBUG, f"🥓[SSL] {ssl_verification_info['message']}")
 
     # 设置控件属性参数
@@ -10987,38 +10952,41 @@ def script_defaults(settings):  # 设置其默认值
 
     widget_specific_object = widget.Group.live
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(get_room_status())
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(
+            get_room_status())
         widget_specific_object.Enabled = bool(get_room_status())
         widget_specific_object.Bool = bool(get_common_widget_visibility().get(widget_specific_object.GroupProps, True))
 
     widget_specific_object = widget.Group.bookingSend
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(get_room_status())
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(
+            get_room_status())
         widget_specific_object.Enabled = bool(get_room_status())
         widget_specific_object.Bool = bool(get_common_widget_visibility().get(widget_specific_object.GroupProps, True))
 
     widget_specific_object = widget.Group.booking
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(get_room_status())
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(
+            get_room_status())
         widget_specific_object.Enabled = bool(get_room_status())
         widget_specific_object.Bool = bool(get_common_widget_visibility().get(widget_specific_object.GroupProps, True))
 
     widget_specific_object = widget.Group.danmu
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_default_user()["value"] else False
-        widget_specific_object.Enabled = True if get_default_user()["value"] else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Enabled = True if get_b_u_c_m().get_default_user_id() else False
         widget_specific_object.Bool = bool(get_common_widget_visibility().get(widget_specific_object.GroupProps, True))
 
     widget_specific_object = widget.Group.danmuDisplayOptions
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_default_user()["value"] else False
-        widget_specific_object.Enabled = True if get_default_user()["value"] else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Enabled = True if get_b_u_c_m().get_default_user_id() else False
         widget_specific_object.Bool = bool(get_common_widget_visibility().get(widget_specific_object.GroupProps, True))
 
     widget_specific_object = widget.Group.danmuOnOff
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_default_user()["value"] else False
-        widget_specific_object.Enabled = True if get_default_user()["value"] else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Enabled = True if get_b_u_c_m().get_default_user_id() else False
         widget_specific_object.Bool = bool(get_common_widget_visibility().get(widget_specific_object.GroupProps, True))
 
     widget_specific_object = widget.Group.danmuSend
@@ -11061,11 +11029,11 @@ def script_defaults(settings):  # 设置其默认值
     if widget_specific_object.Name in update_widget_for_props_name:
         widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True
         widget_specific_object.Enabled = True
-        if get_default_user()["value"]:
-            widget_specific_object.Text = f'{get_default_user()["label"]} 已登录'
+        if get_b_u_c_m().get_default_user_id():
+            widget_specific_object.Text = f'{get_default_user_nickname()} 已登录'
         else:
             widget_specific_object.Text = '未登录，请登录后点击【更新账号列表】'
-        if get_default_user()["value"]:
+        if get_b_u_c_m().get_default_user_id():
             widget_specific_object.InfoType = obs.OBS_TEXT_INFO_NORMAL
         else:
             widget_specific_object.InfoType = obs.OBS_TEXT_INFO_WARNING
@@ -11074,14 +11042,15 @@ def script_defaults(settings):  # 设置其默认值
     if widget_specific_object.Name in update_widget_for_props_name:
         widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True
         widget_specific_object.Enabled = True
-        widget_specific_object.Text = get_default_user()['label'] if get_default_user()["value"] else '添加或选择一个账号登录'
-        widget_specific_object.Value = get_default_user()["value"] if get_default_user()["value"] else '-1'
-        widget_specific_object.DictionaryList = get_uid_nickname_dict_list()
+        widget_specific_object.Text = get_default_user_nickname() if get_b_u_c_m().get_default_user_id() else '添加或选择一个账号登录'
+        widget_specific_object.Value = get_b_u_c_m().get_default_user_id() if get_b_u_c_m().get_default_user_id() else '-1'
+        widget_specific_object.Dictionary = get_uid_nickname_dict()
 
     widget_specific_object = widget.Button.login
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_uid_nickname_dict_list() != [{'添加或选择一个账号登录': '-1'}] else False
-        widget_specific_object.Enabled = True if get_uid_nickname_dict_list() != [{'添加或选择一个账号登录': '-1'}] else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_uid_nickname_dict() != {
+            '添加或选择一个账号登录': '-1'} else False
+        widget_specific_object.Enabled = True if get_uid_nickname_dict() != {'添加或选择一个账号登录': '-1'} else False
 
     widget_specific_object = widget.Button.accountListUpdate
     if widget_specific_object.Name in update_widget_for_props_name:
@@ -11100,8 +11069,9 @@ def script_defaults(settings):  # 设置其默认值
 
     widget_specific_object = widget.Button.accountDelete
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_uid_nickname_dict_list() != [{'添加或选择一个账号登录': '-1'}] else False
-        widget_specific_object.Enabled = True if get_uid_nickname_dict_list() != [{'添加或选择一个账号登录': '-1'}] else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_uid_nickname_dict() != {
+            '添加或选择一个账号登录': '-1'} else False
+        widget_specific_object.Enabled = True if get_uid_nickname_dict() != {'添加或选择一个账号登录': '-1'} else False
 
     widget_specific_object = widget.Button.accountBackup
     if widget_specific_object.Name in update_widget_for_props_name:
@@ -11115,8 +11085,8 @@ def script_defaults(settings):  # 设置其默认值
 
     widget_specific_object = widget.Button.logout
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_default_user()["value"] else False
-        widget_specific_object.Enabled = True if get_default_user()["value"] else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Enabled = True if get_b_u_c_m().get_default_user_id() else False
 
     # 分组框【直播间】
     # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -11124,7 +11094,7 @@ def script_defaults(settings):  # 设置其默认值
     if widget_specific_object.Name in update_widget_for_props_name:
         widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True
         widget_specific_object.Enabled = True
-        if get_default_user()["value"]:
+        if get_b_u_c_m().get_default_user_id():
             if get_room_status():
                 if get_live_status():
                     widget_specific_object.Text = f"{str(get_room_id())}直播中"
@@ -11134,7 +11104,7 @@ def script_defaults(settings):  # 设置其默认值
                 widget_specific_object.Text = "无直播间"
         else:
             widget_specific_object.Text = "未登录"
-        if get_default_user()["value"]:
+        if get_b_u_c_m().get_default_user_id():
             if get_room_status():
                 if get_live_status():
                     widget_specific_object.InfoType = obs.OBS_TEXT_INFO_NORMAL
@@ -11147,8 +11117,9 @@ def script_defaults(settings):  # 设置其默认值
 
     widget_specific_object = widget.Button.roomOpened
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else (not bool(get_room_status())) if get_default_user()["value"] else False
-        widget_specific_object.Enabled = (not bool(get_room_status())) if get_default_user()["value"] else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else (
+            not bool(get_room_status())) if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Enabled = (not bool(get_room_status())) if get_b_u_c_m().get_default_user_id() else False
 
     widget_specific_object = widget.Button.realNameAuthentication
     if widget_specific_object.Name in update_widget_for_props_name:
@@ -11157,12 +11128,14 @@ def script_defaults(settings):  # 设置其默认值
 
     widget_specific_object = widget.Button.roomCoverView
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(get_room_status())
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(
+            get_room_status())
         widget_specific_object.Enabled = bool(get_room_status())
 
     widget_specific_object = widget.PathBox.roomCover
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(get_room_status())
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(
+            get_room_status())
         widget_specific_object.Enabled = bool(get_room_status())
         widget_specific_object.Text = ""
 
@@ -11173,31 +11146,36 @@ def script_defaults(settings):  # 设置其默认值
 
     widget_specific_object = widget.ComboBox.roomCommonTitles
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(get_room_status())
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(
+            get_room_status())
         widget_specific_object.Enabled = bool(get_room_status())
         widget_specific_object.Text = get_room_title() if bool(get_room_status()) else ""
         widget_specific_object.Value = "0"
-        widget_specific_object.DictionaryList = get_common_title_number_dict_list()
+        widget_specific_object.Dictionary = get_common_title4number()
 
     widget_specific_object = widget.Button.roomTitleChange
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(get_room_status())
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(
+            get_room_status())
         widget_specific_object.Enabled = bool(get_room_status())
 
     widget_specific_object = widget.TextBox.roomNews
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(get_room_status())
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(
+            get_room_status())
         widget_specific_object.Enabled = bool(get_room_status())
         widget_specific_object.Text = get_room_news() if bool(get_room_status()) else ""
 
     widget_specific_object = widget.Button.roomNewsChange
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(get_room_status())
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(
+            get_room_status())
         widget_specific_object.Enabled = bool(get_room_status())
 
     widget_specific_object = widget.ComboBox.roomCommonAreas
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(get_room_status())
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(
+            get_room_status())
         widget_specific_object.Enabled = bool(get_room_status())
         if get_common_areas():
             common_areas_text = list(get_common_area_id_dict_str4common_area_name_dict_str().keys())[0]
@@ -11209,7 +11187,7 @@ def script_defaults(settings):  # 设置其默认值
             widget_specific_object.Value = common_areas_value
         else:
             widget_specific_object.Value = "-1"
-        widget_specific_object.DictionaryList = get_common_area_id_dict_str4common_area_name_dict_str()
+        widget_specific_object.Dictionary = get_common_area_id_dict_str4common_area_name_dict_str()
 
     widget_specific_object = widget.Button.roomCommonAreasTrue
     if widget_specific_object.Name in update_widget_for_props_name:
@@ -11218,11 +11196,12 @@ def script_defaults(settings):  # 设置其默认值
 
     widget_specific_object = widget.ComboBox.roomParentArea
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(get_room_status())
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(
+            get_room_status())
         widget_specific_object.Enabled = bool(get_room_status())
         widget_specific_object.Text = str(get_area()["parent_area_name"]) if bool(get_area()) else "请选择一级分区"
         widget_specific_object.Value = str(get_area()["parent_area_id"]) if bool(get_area()) else "-1"
-        widget_specific_object.DictionaryList = get_parent_live_area_name4parent_live_area_id()
+        widget_specific_object.Dictionary = get_parent_live_area_name4parent_live_area_id()
 
     widget_specific_object = widget.Button.roomParentAreaTrue
     if widget_specific_object.Name in update_widget_for_props_name:
@@ -11231,66 +11210,75 @@ def script_defaults(settings):  # 设置其默认值
 
     widget_specific_object = widget.ComboBox.roomSubArea
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(get_room_status())
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(
+            get_room_status())
         widget_specific_object.Enabled = bool(get_room_status())
         widget_specific_object.Text = str(get_area()["area_name"]) if bool(get_area()) else "请确认一级分区"
         widget_specific_object.Value = str(get_area()["area_id"]) if bool(get_area()) else "-1"
-        widget_specific_object.DictionaryList = get_sub_live_area_name4sub_live_area_id()
+        widget_specific_object.Dictionary = get_sub_live_area_name4sub_live_area_id()
 
     widget_specific_object = widget.Button.roomSubAreaTrue
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(get_room_status())
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(
+            get_room_status())
         widget_specific_object.Enabled = bool(get_room_status())
 
     widget_specific_object = widget.Button.bliveWebJump
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_default_user()["value"] else False
-        widget_specific_object.Enabled = True if get_default_user()["value"] else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Enabled = True if get_b_u_c_m().get_default_user_id() else False
 
     # 分组框【直播】
     # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
     widget_specific_object = widget.Button.liveFaceAuth
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(get_room_status())
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(
+            get_room_status())
         widget_specific_object.Enabled = bool(get_room_status())
 
     widget_specific_object = widget.ComboBox.liveStreamingPlatform
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(get_room_status())
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(
+            get_room_status())
         widget_specific_object.Enabled = not bool(get_live_status())
         if not bool(widget_specific_object.Text):
             widget_specific_object.Text = "直播姬（pc）"
         if not bool(widget_specific_object.Value):
             widget_specific_object.Value = "pc_link"
-        widget_specific_object.DictionaryList = {
+        widget_specific_object.Dictionary = {
             "直播姬（pc）": "pc_link", "web在线直播": "web_link", "bililink": "android_link"
         }
 
     widget_specific_object = widget.Button.liveStart
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if ((not get_live_status()) and get_room_status()) else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if (
+                    (not get_live_status()) and get_room_status()) else False
         widget_specific_object.Enabled = True if ((not get_live_status()) and get_room_status()) else False
 
     widget_specific_object = widget.Button.liveRtmpAddressCopy
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if (get_live_status() and get_room_status()) else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if (
+                    get_live_status() and get_room_status()) else False
         widget_specific_object.Enabled = True if (get_live_status() and get_room_status()) else False
 
     widget_specific_object = widget.Button.liveRtmpCodeCopy
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if (get_live_status() and get_room_status()) else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if (
+                    get_live_status() and get_room_status()) else False
         widget_specific_object.Enabled = True if (get_live_status() and get_room_status()) else False
 
     widget_specific_object = widget.Button.liveStop
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if (get_live_status() and get_room_status()) else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if (
+                    get_live_status() and get_room_status()) else False
         widget_specific_object.Enabled = True if (get_live_status() and get_room_status()) else False
 
     # 分组框【直播预约】
     # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
     widget_specific_object = widget.DigitalDisplay.liveBookingsDay
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(get_room_status())
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(
+            get_room_status())
         widget_specific_object.Enabled = bool(get_room_status())
         widget_specific_object.Value = 0
         widget_specific_object.Min = 0
@@ -11304,7 +11292,8 @@ def script_defaults(settings):  # 设置其默认值
 
     widget_specific_object = widget.DigitalDisplay.liveBookingsHour
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(get_room_status())
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(
+            get_room_status())
         widget_specific_object.Enabled = bool(get_room_status())
         widget_specific_object.Value = 0
         widget_specific_object.Min = 0
@@ -11318,7 +11307,8 @@ def script_defaults(settings):  # 设置其默认值
 
     widget_specific_object = widget.DigitalDisplay.liveBookingsMinute
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(get_room_status())
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(
+            get_room_status())
         widget_specific_object.Enabled = bool(get_room_status())
         widget_specific_object.Value = 6
         widget_specific_object.Min = 5
@@ -11332,27 +11322,31 @@ def script_defaults(settings):  # 设置其默认值
 
     widget_specific_object = widget.CheckBox.liveBookingsDynamic
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(get_room_status())
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(
+            get_room_status())
         widget_specific_object.Enabled = bool(get_room_status())
         widget_specific_object.Bool = False
 
     widget_specific_object = widget.TextBox.liveBookingsTitle
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(get_room_status())
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(
+            get_room_status())
         widget_specific_object.Enabled = bool(get_room_status())
         widget_specific_object.Text = ""
 
     widget_specific_object = widget.Button.liveBookingsCreate
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(get_room_status())
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(
+            get_room_status())
         widget_specific_object.Enabled = bool(get_room_status())
 
     widget_specific_object = widget.ComboBox.liveBookings
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(get_room_status())
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(
+            get_room_status())
         widget_specific_object.Enabled = bool(get_room_status())
         widget_specific_object.Text = "无直播预约"
-        if get_default_user()["value"]:
+        if get_b_u_c_m().get_default_user_id():
             if get_room_status():
                 if get_reserve_list():
                     for reserve in get_reserve_list():
@@ -11365,7 +11359,7 @@ def script_defaults(settings):  # 设置其默认值
                 widget_specific_object.Text = '⚠️无直播间'
         else:
             widget_specific_object.Text = "⚠️未登录账号"
-        if get_default_user()["value"]:
+        if get_b_u_c_m().get_default_user_id():
             if get_room_status():
                 if get_reserve_list():
                     for reserve in get_reserve_list():
@@ -11376,19 +11370,20 @@ def script_defaults(settings):  # 设置其默认值
                 widget_specific_object.Value = "-1"
         else:
             widget_specific_object.Value = "-1"
-        widget_specific_object.DictionaryList = get_reserve_name4reserve_sid()
+        widget_specific_object.Dictionary = get_reserve_name4reserve_sid()
 
     widget_specific_object = widget.Button.liveBookingsCancel
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(get_room_status())
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else bool(
+            get_room_status())
         widget_specific_object.Enabled = bool(get_room_status())
 
     # 分组框【弹幕】
     # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
     widget_specific_object = widget.DigitalDisplay.danmuNumCommentsClient
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_default_user()["value"] else False
-        if get_default_user()["value"]:
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
+        if get_b_u_c_m().get_default_user_id():
             if not GlobalVariableOfData.danmu_running:
                 widget_specific_object.Enabled = True
             else:
@@ -11402,8 +11397,8 @@ def script_defaults(settings):  # 设置其默认值
 
     widget_specific_object = widget.DigitalDisplay.danmuIntervalNumCommentsClient
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_default_user()["value"] else False
-        if get_default_user()["value"]:
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
+        if get_b_u_c_m().get_default_user_id():
             if not GlobalVariableOfData.danmu_running:
                 widget_specific_object.Enabled = True
             else:
@@ -11417,50 +11412,50 @@ def script_defaults(settings):  # 设置其默认值
 
     widget_specific_object = widget.CheckBox.enterRoomDisplay
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_default_user()["value"] else False
-        widget_specific_object.Enabled = True if get_default_user()["value"] else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Enabled = True if get_b_u_c_m().get_default_user_id() else False
         widget_specific_object.Bool = bool(get_common_danmu_setting()[2]) if get_common_danmu_setting() else False
 
     widget_specific_object = widget.CheckBox.medalDisplay
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_default_user()["value"] else False
-        widget_specific_object.Enabled = True if get_default_user()["value"] else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Enabled = True if get_b_u_c_m().get_default_user_id() else False
         widget_specific_object.Bool = bool(get_common_danmu_setting()[3]) if get_common_danmu_setting() else False
 
     widget_specific_object = widget.CheckBox.medalOtherDisplay
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_default_user()["value"] else False
-        widget_specific_object.Enabled = True if get_default_user()["value"] else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Enabled = True if get_b_u_c_m().get_default_user_id() else False
         widget_specific_object.Bool = bool(get_common_danmu_setting()[4]) if get_common_danmu_setting() else False
 
     widget_specific_object = widget.CheckBox.medalUnLightDisplay
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_default_user()["value"] else False
-        widget_specific_object.Enabled = True if get_default_user()["value"] else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Enabled = True if get_b_u_c_m().get_default_user_id() else False
         widget_specific_object.Bool = bool(get_common_danmu_setting()[5]) if get_common_danmu_setting() else False
 
     widget_specific_object = widget.CheckBox.lineBreakDisplay
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_default_user()["value"] else False
-        widget_specific_object.Enabled = True if get_default_user()["value"] else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Enabled = True if get_b_u_c_m().get_default_user_id() else False
         widget_specific_object.Bool = bool(get_common_danmu_setting()[6]) if get_common_danmu_setting() else False
 
     widget_specific_object = widget.CheckBox.tagAdministratorDisplay
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_default_user()["value"] else False
-        widget_specific_object.Enabled = True if get_default_user()["value"] else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Enabled = True if get_b_u_c_m().get_default_user_id() else False
         widget_specific_object.Bool = bool(get_common_danmu_setting()[7]) if get_common_danmu_setting() else False
 
     widget_specific_object = widget.CheckBox.timestampDisplay
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_default_user()["value"] else False
-        widget_specific_object.Enabled = True if get_default_user()["value"] else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Enabled = True if get_b_u_c_m().get_default_user_id() else False
         widget_specific_object.Bool = bool(get_common_danmu_setting()[8]) if get_common_danmu_setting() else False
 
     widget_specific_object = widget.DigitalDisplay.danmuNumCacheEntries
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_default_user()["value"] else False
-        widget_specific_object.Enabled = True if get_default_user()["value"] else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Enabled = True if get_b_u_c_m().get_default_user_id() else False
         widget_specific_object.Value = int(get_common_danmu_setting()[9]) if get_common_danmu_setting() else 2
         widget_specific_object.Min = 2
         widget_specific_object.Max = 30
@@ -11468,8 +11463,8 @@ def script_defaults(settings):  # 设置其默认值
 
     widget_specific_object = widget.DigitalDisplay.danmuCacheDuration
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_default_user()["value"] else False
-        widget_specific_object.Enabled = True if get_default_user()["value"] else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Enabled = True if get_b_u_c_m().get_default_user_id() else False
         widget_specific_object.Value = int(get_common_danmu_setting()[10]) if get_common_danmu_setting() else 1
         widget_specific_object.Min = 1
         widget_specific_object.Max = 10
@@ -11477,8 +11472,8 @@ def script_defaults(settings):  # 设置其默认值
 
     widget_specific_object = widget.DigitalDisplay.danmuFacePictureSize
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_default_user()["value"] else False
-        widget_specific_object.Enabled = True if get_default_user()["value"] else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Enabled = True if get_b_u_c_m().get_default_user_id() else False
         widget_specific_object.Value = int(get_common_danmu_setting()[11]) if get_common_danmu_setting() else 1
         widget_specific_object.Min = 1
         widget_specific_object.Max = 100
@@ -11486,8 +11481,8 @@ def script_defaults(settings):  # 设置其默认值
 
     widget_specific_object = widget.DigitalDisplay.danmuFanMedalTextSize
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_default_user()["value"] else False
-        widget_specific_object.Enabled = True if get_default_user()["value"] else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Enabled = True if get_b_u_c_m().get_default_user_id() else False
         widget_specific_object.Value = int(get_common_danmu_setting()[12]) if get_common_danmu_setting() else 1
         widget_specific_object.Min = 1
         widget_specific_object.Max = 100
@@ -11495,8 +11490,8 @@ def script_defaults(settings):  # 设置其默认值
 
     widget_specific_object = widget.DigitalDisplay.danmuMessageTextSize
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_default_user()["value"] else False
-        widget_specific_object.Enabled = True if get_default_user()["value"] else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Enabled = True if get_b_u_c_m().get_default_user_id() else False
         widget_specific_object.Value = int(get_common_danmu_setting()[13]) if get_common_danmu_setting() else 1
         widget_specific_object.Min = 1
         widget_specific_object.Max = 100
@@ -11504,8 +11499,8 @@ def script_defaults(settings):  # 设置其默认值
 
     widget_specific_object = widget.DigitalDisplay.danmuTimeTextSize
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_default_user()["value"] else False
-        widget_specific_object.Enabled = True if get_default_user()["value"] else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Enabled = True if get_b_u_c_m().get_default_user_id() else False
         widget_specific_object.Value = int(get_common_danmu_setting()[14]) if get_common_danmu_setting() else 1
         widget_specific_object.Min = 1
         widget_specific_object.Max = 100
@@ -11513,24 +11508,24 @@ def script_defaults(settings):  # 设置其默认值
 
     widget_specific_object = widget.Button.settingDanmuData
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_default_user()["value"] else False
-        widget_specific_object.Enabled = True if get_default_user()["value"] else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Enabled = True if get_b_u_c_m().get_default_user_id() else False
 
     widget_specific_object = widget.TextBox.danmuWebCss
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_default_user()["value"] else False
-        widget_specific_object.Enabled = True if get_default_user()["value"] else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Enabled = True if get_b_u_c_m().get_default_user_id() else False
         widget_specific_object.Text = get_common_danmu_web_css()
 
     widget_specific_object = widget.Button.applyDanmuCss
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_default_user()["value"] else False
-        widget_specific_object.Enabled = True if get_default_user()["value"] else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Enabled = True if get_b_u_c_m().get_default_user_id() else False
 
     widget_specific_object = widget.TextBox.danmuWssProt
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_default_user()["value"] else False
-        if get_default_user()["value"]:
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
+        if get_b_u_c_m().get_default_user_id():
             if not GlobalVariableOfData.danmu_running:
                 widget_specific_object.Enabled = True
             else:
@@ -11541,26 +11536,28 @@ def script_defaults(settings):  # 设置其默认值
 
     widget_specific_object = widget.Button.confirmDanmuWssPort
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_default_user()["value"] else False
-        widget_specific_object.Enabled = True if get_default_user()["value"] else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Enabled = True if get_b_u_c_m().get_default_user_id() else False
 
     widget_specific_object = widget.ComboBox.danmuRoom
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_default_user()["value"] else False
-        widget_specific_object.Enabled = True if get_default_user()["value"] else False
-        widget_specific_object.Text = str(list(get_common_danmu_roomid_dict().keys())[0]) if get_common_danmu_roomid_dict() else ""
-        widget_specific_object.Value = str(list(get_common_danmu_roomid_dict().values())[0]) if get_common_danmu_roomid_dict() else ""
-        widget_specific_object.DictionaryList = get_common_danmu_roomid_dict()
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Enabled = True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Text = str(
+            list(get_common_danmu_roomid_dict().keys())[0]) if get_common_danmu_roomid_dict() else ""
+        widget_specific_object.Value = str(
+            list(get_common_danmu_roomid_dict().values())[0]) if get_common_danmu_roomid_dict() else ""
+        widget_specific_object.Dictionary = get_common_danmu_roomid_dict()
 
     widget_specific_object = widget.Button.addDanmuRoomid
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_default_user()["value"] else False
-        widget_specific_object.Enabled = True if get_default_user()["value"] else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Enabled = True if get_b_u_c_m().get_default_user_id() else False
 
     widget_specific_object = widget.Button.delDanmuRoomid
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_default_user()["value"] else False
-        widget_specific_object.Enabled = True if get_default_user()["value"] else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Enabled = True if get_b_u_c_m().get_default_user_id() else False
 
     # 分组框【弹幕启动】
     # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -11576,8 +11573,8 @@ def script_defaults(settings):  # 设置其默认值
 
     widget_specific_object = widget.Button.startDanmu
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_default_user()["value"] else False
-        widget_specific_object.Enabled = True if get_default_user()["value"] else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Enabled = True if get_b_u_c_m().get_default_user_id() else False
 
     widget_specific_object = widget.Button.stopDanmuForwardingService
     if widget_specific_object.Name in update_widget_for_props_name:
@@ -11591,8 +11588,8 @@ def script_defaults(settings):  # 设置其默认值
 
     widget_specific_object = widget.Button.stopDanmu
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_default_user()["value"] else False
-        widget_specific_object.Enabled = True if get_default_user()["value"] else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Enabled = True if get_b_u_c_m().get_default_user_id() else False
 
     # 分组框【弹幕发送】
     # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -11602,7 +11599,7 @@ def script_defaults(settings):  # 设置其默认值
         widget_specific_object.Enabled = True if get_common_danmu_roomid_dict() else False
         widget_specific_object.Text = ""
         widget_specific_object.Value = ""
-        widget_specific_object.DictionaryList = get_common_danmu_emoticons() if get_common_danmu_roomid_dict() else {}
+        widget_specific_object.Dictionary = get_common_danmu_emoticons() if get_common_danmu_roomid_dict() else {}
 
     widget_specific_object = widget.Button.mergeEmoticons
     if widget_specific_object.Name in update_widget_for_props_name:
@@ -11626,28 +11623,28 @@ def script_defaults(settings):  # 设置其默认值
     # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
     widget_specific_object = widget.CheckBox.linkStreamLiveStart
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_default_user()["value"] else False
-        widget_specific_object.Enabled = True if get_default_user()["value"] else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Enabled = True if get_b_u_c_m().get_default_user_id() else False
         widget_specific_object.Bool = bool(get_common_script_setting()[0]) if get_common_script_setting() else False
 
     widget_specific_object = widget.CheckBox.linkStreamLiveStop
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_default_user()["value"] else False
-        widget_specific_object.Enabled = True if get_default_user()["value"] else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Enabled = True if get_b_u_c_m().get_default_user_id() else False
         widget_specific_object.Bool = bool(get_common_script_setting()[1]) if get_common_script_setting() else False
 
     widget_specific_object = widget.CheckBox.autoFillStreamServer
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_default_user()["value"] else False
-        widget_specific_object.Enabled = True if get_default_user()["value"] else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Enabled = True if get_b_u_c_m().get_default_user_id() else False
         widget_specific_object.Bool = bool(get_common_script_setting()[2]) if get_common_script_setting() else False
 
     # 分组框【弹幕设置】
     # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
     widget_specific_object = widget.CheckBox.resetDanmuSource
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_default_user()["value"] else False
-        widget_specific_object.Enabled = True if get_default_user()["value"] else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Enabled = True if get_b_u_c_m().get_default_user_id() else False
         widget_specific_object.Bool = bool(get_common_script_setting()[3]) if get_common_script_setting() else False
 
     widget_specific_object = widget.Button.updateScriptSet
@@ -11868,20 +11865,17 @@ def update_ui_interface_data():
                 elif w.ControlType == "Button":
                     pass
                 elif w.ControlType == "ComboBox":
-                    combo_box_option_dictionary_list = []
+                    combo_box_option_dictionary = {}
                     for idx in range(obs.obs_property_list_item_count(w.Obj)):
-                        combo_box_option_label = obs.obs_property_list_item_name(w.Obj, idx)
-                        combo_box_option_value = obs.obs_property_list_item_string(w.Obj, idx)
-                        combo_box_option_dictionary_list.append({
-                            "label": combo_box_option_label,
-                            "value": combo_box_option_value
-                        })
-                    if w.DictionaryList != combo_box_option_dictionary_list:
+                        combo_box_option_dictionary_key = obs.obs_property_list_item_name(w.Obj, idx)
+                        combo_box_option_dictionary_value = obs.obs_property_list_item_string(w.Obj, idx)
+                        combo_box_option_dictionary[combo_box_option_dictionary_key] = combo_box_option_dictionary_value
+                    if w.Dictionary != combo_box_option_dictionary:
                         obs.obs_property_list_clear(w.Obj)
-                        for Dictionary in w.DictionaryList:
-                            if Dictionary["label"] != w.Text:
+                        for dict_key in w.Dictionary:
+                            if dict_key != w.Text:
                                 obs.obs_property_list_add_string(
-                                    w.Obj, Dictionary["label"], Dictionary["value"]
+                                    w.Obj, dict_key, w.Dictionary[dict_key]
                                 )
                             else:
                                 obs.obs_property_list_insert_string(w.Obj, 0, w.Text, w.Value)
@@ -11893,7 +11887,8 @@ def update_ui_interface_data():
                     elif w.Type == obs.OBS_COMBO_TYPE_LIST:
                         if obs.obs_data_get_string(GlobalVariableOfData.script_settings, w.Name) != w.Value:
                             obs.obs_data_set_string(
-                                GlobalVariableOfData.script_settings, w.Name, obs.obs_property_list_item_string(w.Obj, 0)
+                                GlobalVariableOfData.script_settings, w.Name,
+                                obs.obs_property_list_item_string(w.Obj, 0)
                             )
                 elif w.ControlType == "PathBox":
                     if obs.obs_data_get_string(GlobalVariableOfData.script_settings, w.Name) != w.Text:
@@ -12029,8 +12024,8 @@ class ButtonFunction:
         GlobalVariableOfData.update_widget_for_props_dict = {
             "account_props": widget.props_Collection["account_props"]
         }
-        if widget.ComboBox.uid.DictionaryList == {'添加或选择一个账号登录': '-1'}:
-            GlobalVariableOfData.update_widget_for_props_dict =widget.props_Collection
+        if widget.ComboBox.uid.Dictionary == {'添加或选择一个账号登录': '-1'}:
+            GlobalVariableOfData.update_widget_for_props_dict = widget.props_Collection
         log_save(obs.LOG_INFO, f"更新控件配置信息")
         script_defaults(GlobalVariableOfData.script_settings)
         # 更新脚本用户小部件
@@ -12042,92 +12037,204 @@ class ButtonFunction:
     @staticmethod
     def button_function_qr_add_account(*args):
         """
-        二维码添加账号
+        二维码添加账号（新版：使用 Session 跟随重定向获取完整 Cookie）
         """
         if len(args) == 2:
             props = args[0]
             prop = args[1]
         if len(args) == 3:
             settings = args[2]
-        # 判断是否需要展示登录二维码图片
+
+        # 如果已有二维码图片，则显示并返回
         if GlobalVariableOfData.loginQRCodePillowImg:
             return ButtonFunction.button_function_show_qr_picture()
 
-        # 申请登录二维码
-        url8qrkey = get_b_l_i_r().generate()["data"]
-        # 获取二维码url
-        url = url8qrkey['url']
-        log_save(obs.LOG_INFO, f"获取登录二维码链接{url}")
-        # 获取二维码key
-        GlobalVariableOfData.loginQrCode_key = url8qrkey['qrcode_key']
-        log_save(obs.LOG_INFO, f"获取登录二维码密钥{GlobalVariableOfData.loginQrCode_key}")
-        # 获取二维码对象
+        # 1. 申请登录二维码
+        log_save(obs.LOG_INFO, "正在申请登录二维码...")
+        gen_result = get_b_l_i_r().generate()
+        if not gen_result["success"]:
+            log_save(obs.LOG_ERROR, f"申请二维码失败: {gen_result.get('error', '未知错误')}")
+            return False
+
+        url = gen_result["data"]["url"]
+        qrcode_key = gen_result["data"]["qrcode_key"]
+        log_save(obs.LOG_INFO, f"获取登录二维码链接: {url}")
+        log_save(obs.LOG_INFO, f"获取登录二维码密钥: {qrcode_key}")
+
+        # 生成二维码并保存
         qr = Tools.qr_text8pil_img(url)
-        # 获取登录二维码的pillow img实例
         GlobalVariableOfData.loginQRCodePillowImg = qr["img"]
-        # 输出二维码图形字符串
         log_save(obs.LOG_INFO, f"\n\n{qr['str']}")
-        log_save(obs.LOG_INFO, f"字符串二维码已输出，如果乱码或者扫描不上，建议再次点击 按钮【二维码添加账号】获取图片")
-        # 获取二维码扫描登陆状态
-        GlobalVariableOfData.loginQrCodeReturn = get_b_l_i_r().poll(GlobalVariableOfData.loginQrCode_key)
-        log_save(obs.LOG_INFO, f"开始轮询登录状态")
-        # 轮询登录状态
-        log_save(
-            obs.LOG_WARNING,
-            str(ExplanatoryDictionary.information4login_qr_return_code[int(GlobalVariableOfData.loginQrCodeReturn["data"]["scan_code"])])
-        )
+        log_save(obs.LOG_INFO, "字符串二维码已输出，如果乱码或者扫描不上，建议再次点击 按钮【二维码添加账号】获取图片")
 
+        # 2. 首次轮询（获取初始状态）
+        log_save(obs.LOG_INFO, "开始轮询登录状态")
+        poll_result = get_b_l_i_r().poll(qrcode_key)
+        if poll_result["success"]:
+            scan_code = poll_result["data"].get("scan_code")
+            status_desc = poll_result["data"].get("status_description", "未知状态")
+            log_save(obs.LOG_INFO, f"当前扫码状态: {status_desc} (code={scan_code})")
+            GlobalVariableOfData.loginQrCodeReturn = poll_result["data"]
+        else:
+            log_save(obs.LOG_ERROR, f"轮询失败: {poll_result.get('error', '未知错误')}")
+            return False
+
+        # 3. 定义轮询回调函数（内部使用）
         def check_poll():
-            """
-            二维码扫描登录状态检测
-            @return: cookies，超时为{}
-            """
-            # 获取uid对应的cookies
-            code_old = GlobalVariableOfData.loginQrCodeReturn["data"]["scan_code"]
-            GlobalVariableOfData.loginQrCodeReturn = get_b_l_i_r().poll(GlobalVariableOfData.loginQrCode_key)
-            # 二维码扫描登陆状态改变时，输出改变后状态
-            if code_old != GlobalVariableOfData.loginQrCodeReturn["data"]["scan_code"]:
-                log_save(
-                    obs.LOG_WARNING,
-                    str(
-                        ExplanatoryDictionary.information4login_qr_return_code[
-                            int(GlobalVariableOfData.loginQrCodeReturn["data"]["scan_code"])
-                        ]
-                    )
-                )
-            if GlobalVariableOfData.loginQrCodeReturn["data"]["scan_code"] in [0, 86038]:
-                log_save(obs.LOG_INFO, "轮询结束")
-                GlobalVariableOfData.loginQRCodePillowImg = None
-                # 二维码扫描登陆状态为成功或者超时时获取cookies结束[轮询二维码扫描登陆状态]
-                cookies = GlobalVariableOfData.loginQrCodeReturn['data']
-                if cookies and GlobalVariableOfData.loginQrCodeReturn["data"]["scan_code"] == 0:
-                    buvid_info = get_i_c().get_buvid_info()
-                    cookies["buvid3"] = buvid_info['data']['b_3']
-                    cookies["buvid4"] = buvid_info['data']['b_4']
-                    buvid3_and_bnut = get_i_c().fetch_buvid3_and_bnut()
-                    cookies["b_nut"] = buvid3_and_bnut['data']['b_nut']
-                    # 获取登陆账号cookies中携带的uid
-                    uid = int(cookies['DedeUserID'])
-                    all_users_id_list = []
-                    for user_dict in get_b_u_c_m().get_all_users()["data"]["users"]:
-                        all_users_id_list.append(user_dict["user_id"])
-                    if str(uid) in all_users_id_list:
-                        log_save(obs.LOG_DEBUG, "已有该用户，正在更新用户登录信息")
-                        get_b_u_c_m().update_user(cookies, False)
+            nonlocal qrcode_key
+            should_stop = False
+            try:
+                # 调用 poll 获取最新状态
+                poll_result = get_b_l_i_r().poll(qrcode_key)
+                if not poll_result["success"]:
+                    log_save(obs.LOG_ERROR, f"轮询请求失败: {poll_result.get('error', '')}")
+                    should_stop = True
+                    return
+
+                data = poll_result["data"]
+                scan_code = data.get("scan_code")
+                status_desc = data.get("status_description", "未知状态")
+                log_save(obs.LOG_DEBUG, f"当前扫码状态: {status_desc} (code={scan_code})")
+                GlobalVariableOfData.loginQrCodeReturn = data
+
+                if scan_code == 0:
+                    # ========== 登录成功，使用 Session 获取完整 Cookie ==========
+                    login_url = data.get("login_url", "")
+                    if not login_url:
+                        log_save(obs.LOG_ERROR, "登录成功但未返回回调 URL")
+                        should_stop = True
+                        return
+
+                    log_save(obs.LOG_INFO, f"登录回调 URL: {login_url}")
+                    log_save(obs.LOG_INFO, "正在通过重定向链获取完整 Cookie...")
+
+                    # 创建 Session 并设置请求头（模拟浏览器）
+                    session = requests.Session()
+                    session.headers.update({
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+                        'Connection': 'keep-alive',
+                        'Upgrade-Insecure-Requests': '1',
+                        'Sec-Fetch-Dest': 'document',
+                        'Sec-Fetch-Mode': 'navigate',
+                        'Sec-Fetch-Site': 'cross-site',
+                        'Sec-Fetch-User': '?1',
+                        'Cache-Control': 'max-age=0',
+                        'Referer': 'https://passport.bilibili.com/',
+                        'Origin': 'https://passport.bilibili.com'
+                    })
+
+                    # 第一步：访问回调 URL（禁止自动重定向）
+                    log_save(obs.LOG_INFO, "请求1: 访问登录回调 URL (禁止自动重定向)")
+                    log_request("请求1", "GET", login_url, session.headers)
+                    resp1 = session.get(login_url, allow_redirects=False, timeout=10)
+                    log_response("响应1", resp1)
+
+                    if resp1.status_code in (301, 302, 303, 307, 308):
+                        location = resp1.headers.get('Location')
+                        if location:
+                            log_save(obs.LOG_INFO, f"重定向到: {location}")
+                            log_save(obs.LOG_INFO, "请求2: 跟随重定向 (允许自动重定向)")
+                            log_request("请求2", "GET", location, session.headers)
+                            resp2 = session.get(location, allow_redirects=True, timeout=10)
+                            log_response("响应2", resp2)
+                        else:
+                            log_save(obs.LOG_ERROR, "重定向响应缺少 Location 头")
+                            should_stop = True
+                            return
                     else:
-                        get_b_u_c_m().add_user(cookies)
-                        log_save(obs.LOG_INFO, f"添加用户成功")
-                        if widget.ComboBox.uid.DictionaryList == {'添加或选择一个账号登录': '-1'}:
-                            get_b_u_c_m().update_user(cookies, True)
-                        log_save(obs.LOG_INFO, "请点击按钮【更新账号列表】，更新用户列表")
-                else:
-                    log_save(obs.LOG_INFO, f"添加用户失败: {GlobalVariableOfData.loginQrCodeReturn}")
-                # 结束计时器
-                obs.remove_current_callback()
+                        # 如果没有重定向，尝试直接访问 gourl（从 resp1 或解析 login_url 获取）
+                        log_save(obs.LOG_INFO, "未收到重定向，尝试直接访问 gourl")
+                        # 从 login_url 中提取 gourl 参数
+                        parsed = urllib.parse.urlparse(login_url)
+                        query = urllib.parse.parse_qs(parsed.query)
+                        gourl = query.get('gourl', ['https://www.bilibili.com'])[0]
+                        log_save(obs.LOG_INFO, f"gourl: {gourl}")
+                        log_request("请求2", "GET", gourl, session.headers)
+                        resp2 = session.get(gourl, allow_redirects=True, timeout=10)
+                        log_response("响应2", resp2)
 
-            clear_cache()        # 开始计时器
+                    # 获取完整的 cookies
+                    cookies_dict = session.cookies.get_dict()
+                    log_save(obs.LOG_INFO, f"获取到的完整 Cookies 键: {list(cookies_dict.keys())}")
+
+                    # 提取必需字段
+                    cookies = {
+                        'DedeUserID': cookies_dict.get('DedeUserID', ''),
+                        'DedeUserID__ckMd5': cookies_dict.get('DedeUserID__ckMd5', ''),
+                        'SESSDATA': cookies_dict.get('SESSDATA', ''),
+                        'bili_jct': cookies_dict.get('bili_jct', ''),
+                        'buvid3': cookies_dict.get('buvid3', ''),
+                        'b_nut': cookies_dict.get('b_nut', ''),
+                    }
+                    # 补全其他字段（如果有）
+                    for k, v in cookies_dict.items():
+                        if k not in cookies:
+                            cookies[k] = v
+
+                    # 验证关键字段
+                    required_basic = ['DedeUserID', 'SESSDATA', 'bili_jct']
+                    missing = [k for k in required_basic if not cookies.get(k)]
+                    if missing:
+                        log_save(obs.LOG_ERROR, f"提取的 Cookie 不完整，缺少: {', '.join(missing)}")
+                        log_save(obs.LOG_INFO, f"当前 cookies: {cookies}")
+                        should_stop = True
+                        return
+
+                    uid = cookies['DedeUserID']
+                    log_save(obs.LOG_INFO, f"✅ 扫码登录成功，用户ID: {uid}")
+
+                    # 调用账户管理器保存/更新用户
+                    # 获取额外的 buvid3 / buvid4 / b_nut（如果需要，也可以从 cookies 中获取）
+                    # 如果某些字段缺失，可以使用备用生成（此处省略，可参照新版 ImproveCookies）
+                    # 直接保存用户
+                    all_users = [u["user_id"] for u in get_b_u_c_m().get_all_users()["data"]["users"]]
+                    if str(uid) in all_users:
+                        get_b_u_c_m().update_user(cookies, False)
+                        log_save(obs.LOG_INFO, f"用户 {uid} 已更新")
+                    else:
+                        # 需要解码的字段列表（可根据实际情况扩展）
+                        fields_to_decode = ['SESSDATA', 'DedeUserID__ckMd5', 'bili_jct', 'buvid3', 'b_nut']
+                        for field in fields_to_decode:
+                            if field in cookies and cookies[field]:
+                                cookies[field] = urllib.parse.unquote(cookies[field])
+
+                        # 经过解码后，SESSDATA 中的 %2C 会变为 , ，%2A 变为 *
+                        # 现在再保存账户
+                        uid = cookies['DedeUserID']
+                        all_users = [u["user_id"] for u in get_b_u_c_m().get_all_users()["data"]["users"]]
+                        if str(uid) in all_users:
+                            get_b_u_c_m().update_user(cookies, False)
+                        else:
+                            get_b_u_c_m().add_user(cookies)
+                        log_save(obs.LOG_INFO, f"用户 {uid} 已添加")
+                        # 如果当前没有默认用户，设为默认
+                        if not get_b_u_c_m().get_default_user_id():
+                            get_b_u_c_m().set_default_user(uid)
+
+                    # 清除二维码图片，停止轮询
+                    GlobalVariableOfData.loginQRCodePillowImg = None
+                    should_stop = True
+                    return
+
+                elif scan_code == 86038:
+                    log_save(obs.LOG_WARNING, "二维码已失效")
+                    GlobalVariableOfData.loginQRCodePillowImg = None
+                    should_stop = True
+                    return
+
+                # 其他状态（86090, 86101 等）继续轮询
+
+            except Exception as e:
+                log_save(obs.LOG_ERROR, f"轮询回调异常: {str(e)}")
+                should_stop = True
+            finally:
+                if should_stop:
+                    obs.remove_current_callback()
+
+        # 4. 启动定时器（每秒轮询一次）
         obs.timer_add(check_poll, 1000)
-
         clear_cache()
         return True
 
@@ -12167,14 +12274,14 @@ class ButtonFunction:
         # ＝     删除      ＝
         # ＝＝＝＝＝＝＝＝＝＝＝
         log_save(obs.LOG_INFO, f"即将删除的账号：{uid}")
-        if get_default_user()["value"] == uid:
+        if get_b_u_c_m().get_default_user_id() == uid:
             get_b_u_c_m().clear_default_user()
         get_b_u_c_m().delete_user(uid)
 
         clear_cache()
 
         # 更新脚本控制台中的控件
-        if get_default_user()["value"] == uid:
+        if get_b_u_c_m().get_default_user_id() == uid:
             GlobalVariableOfData.update_widget_for_props_dict = widget.props_Collection
         else:
             GlobalVariableOfData.update_widget_for_props_dict = {
@@ -12287,7 +12394,7 @@ class ButtonFunction:
         if len(args) == 3:
             settings = args[2]
         # 获取登录用户的uid
-        uid = get_default_user()["value"]
+        uid = get_b_u_c_m().get_default_user_id()
         log_save(obs.LOG_INFO, f"获取登录用户的uid：{uid}")
         # 获取人脸认证的链接
         qr_url = f"https://account.bilibili.com/h5/account-h5/middle-redirect?mid={uid}"
@@ -12322,7 +12429,8 @@ class ButtonFunction:
         }
 
         # # 获取'默认账户'直播间的基础信息
-        room_cover_pillow_img = Tools.url2pillow_image(room_cover_url, Headers, GlobalVariableOfData.sslVerification)["PilImg"]
+        room_cover_pillow_img = Tools.url2pillow_image(room_cover_url, Headers, GlobalVariableOfData.sslVerification)[
+            "PilImg"]
         log_save(obs.LOG_INFO, f"显示16:9封面")
         log_save(obs.LOG_INFO, f"格式: {room_cover_pillow_img.format}，尺寸: {room_cover_pillow_img.size}")
         room_cover_pillow_img.show()
@@ -12344,7 +12452,7 @@ class ButtonFunction:
             settings = args[2]
         # 获取文件对话框内容
         widget.PathBox.roomCover.Text = obs.obs_data_get_string(
-            GlobalVariableOfData.script_settings,widget.PathBox.roomCover.Name
+            GlobalVariableOfData.script_settings, widget.PathBox.roomCover.Name
         )
         log_save(obs.LOG_INFO, f"获得图片文件：{widget.PathBox.roomCover.Text}")
         if widget.PathBox.roomCover.Text:
@@ -12406,7 +12514,7 @@ class ButtonFunction:
         if len(args) == 3:
             settings = args[2]
         # 获取登录用户的uid
-        uid = get_default_user()["value"]
+        uid = get_b_u_c_m().get_default_user_id()
         log_save(obs.LOG_INFO, f"获取登录用户的uid：{uid}")
         # 获取人脸认证的链接
         qr_url = f"https://www.bilibili.com/blackboard/live/face-auth-middle.html?source_event=400&mid={uid}"
@@ -12433,10 +12541,12 @@ class ButtonFunction:
             prop = args[1]
         if len(args) == 3:
             settings = args[2]
-        room_title = obs.obs_data_get_string(GlobalVariableOfData.script_settings, widget.ComboBox.roomCommonTitles.Name)
+        room_title = obs.obs_data_get_string(GlobalVariableOfData.script_settings,
+                                             widget.ComboBox.roomCommonTitles.Name)
         """标题文本框中的文本"""
 
-        turn_title_return = get_b_csrf_a().change_room_title(get_b_s_a_m().get_room_highlight_info()["data"]["room_id"], room_title)
+        turn_title_return = get_b_csrf_a().change_room_title(get_b_s_a_m().get_room_highlight_info()["data"]["room_id"],
+                                                             room_title)
         """更改标题的返回值"""
         log_save(obs.LOG_INFO, f"更改直播间标题返回消息：{turn_title_return}")
         if turn_title_return['success']:
@@ -12444,7 +12554,7 @@ class ButtonFunction:
         else:
             log_save(obs.LOG_INFO, f"直播间标题更改失败{turn_title_return['message']}")
             return False
-        get_c_d_m().add_data(get_default_user()["value"], "title", room_title)
+        get_c_d_m().add_data(get_b_u_c_m().get_default_user_id(), "title", room_title)
 
         clear_cache()
 
@@ -12472,11 +12582,14 @@ class ButtonFunction:
             prop = args[1]
         if len(args) == 3:
             settings = args[2]
-        room_news_textbox_t = obs.obs_data_get_string(GlobalVariableOfData.script_settings, widget.TextBox.roomNews.Name)
+        room_news_textbox_t = obs.obs_data_get_string(GlobalVariableOfData.script_settings,
+                                                      widget.TextBox.roomNews.Name)
         """公告文本框中的文本"""
 
         try:
-            turn_news_return = get_b_csrf_a().change_room_news(get_b_s_a_m().get_room_highlight_info()["data"]["room_id"], room_news_textbox_t)["api_response"]
+            turn_news_return = \
+            get_b_csrf_a().change_room_news(get_b_s_a_m().get_room_highlight_info()["data"]["room_id"],
+                                            room_news_textbox_t)["api_response"]
             """更改公告的返回值"""
         except KeyError as e:
             log_save(obs.LOG_ERROR, f"直播间公告更改失败，不存在相应的键{e}，公告不能为空")
@@ -12506,7 +12619,7 @@ class ButtonFunction:
             settings = args[2]
         # #获取 组合框【常用分区】 当前选项的值
         room_common_areas_combobox_value = obs.obs_data_get_string(
-            GlobalVariableOfData.script_settings,widget.ComboBox.roomCommonAreas.Name
+            GlobalVariableOfData.script_settings, widget.ComboBox.roomCommonAreas.Name
         )
         log_save(obs.LOG_INFO, f"获取 组合框【常用分区】 当前选项的值: {room_common_areas_combobox_value}")
         if room_common_areas_combobox_value == "-1":
@@ -12541,7 +12654,7 @@ class ButtonFunction:
 
         # #获取 组合框【一级分区】 当前选项的值
         parent_live_area_combobox_value = obs.obs_data_get_string(
-            GlobalVariableOfData.script_settings,widget.ComboBox.roomParentArea.Name
+            GlobalVariableOfData.script_settings, widget.ComboBox.roomParentArea.Name
         )
         """组合框【一级分区】 当前选项的值"""
         if parent_live_area_combobox_value in ["-1"]:
@@ -12595,15 +12708,16 @@ class ButtonFunction:
 
         # #获取 组合框【一级分区】 当前选项的值
         parent_live_area_combobox_value = obs.obs_data_get_string(
-            GlobalVariableOfData.script_settings,widget.ComboBox.roomParentArea.Name
+            GlobalVariableOfData.script_settings, widget.ComboBox.roomParentArea.Name
         )
         """组合框【一级分区】 当前选项的值"""
         # #获取 组合框【二级分区】 当前选项的值
         sub_live_area_combobox_value = obs.obs_data_get_string(
-            GlobalVariableOfData.script_settings,widget.ComboBox.roomSubArea.Name
+            GlobalVariableOfData.script_settings, widget.ComboBox.roomSubArea.Name
         )
 
-        change_room_area_return = get_b_csrf_a().change_room_area(get_b_s_a_m().get_room_highlight_info()["data"]["room_id"], int(sub_live_area_combobox_value))
+        change_room_area_return = get_b_csrf_a().change_room_area(
+            get_b_s_a_m().get_room_highlight_info()["data"]["room_id"], int(sub_live_area_combobox_value))
         log_save(obs.LOG_INFO, f"更新直播间分区返回：{change_room_area_return}")
         if change_room_area_return["success"]:
             log_save(obs.LOG_INFO, f"直播间分区更改成功: {sub_live_area_combobox_value}")
@@ -12618,14 +12732,14 @@ class ButtonFunction:
         widget.ComboBox.roomCommonAreas.Text = common_areas_text
         common_areas_value = list(get_common_area_id_dict_str4common_area_name_dict_str().values())[0]
         widget.ComboBox.roomCommonAreas.Value = common_areas_value
-        widget.ComboBox.roomCommonAreas.DictionaryList = get_common_area_id_dict_str4common_area_name_dict_str()
+        widget.ComboBox.roomCommonAreas.Dictionary = get_common_area_id_dict_str4common_area_name_dict_str()
 
         widget.ComboBox.roomParentArea.Text = get_area()["parent_area_name"]
         widget.ComboBox.roomParentArea.Value = get_area()["parent_area_id"]
 
         widget.ComboBox.roomSubArea.Text = get_area()["area_name"]
         widget.ComboBox.roomSubArea.Value = get_sub_live_area_name4sub_live_area_id()[str(get_area()["area_name"])]
-        widget.ComboBox.roomSubArea.DictionaryList = get_sub_live_area_name4sub_live_area_id()
+        widget.ComboBox.roomSubArea.Dictionary = get_sub_live_area_name4sub_live_area_id()
 
         clear_cache()
 
@@ -12673,7 +12787,8 @@ class ButtonFunction:
         )
         log_save(obs.LOG_INFO, f"使用【{live_streaming_platform}】平台 在【{sub_live_area_combobox_value}】分区 开播")
 
-        start_live = get_b_csrf_a().start_live(get_b_s_a_m().get_room_highlight_info()["data"]["room_id"], int(sub_live_area_combobox_value), live_streaming_platform)
+        start_live = get_b_csrf_a().start_live(get_b_s_a_m().get_room_highlight_info()["data"]["room_id"],
+                                               int(sub_live_area_combobox_value), live_streaming_platform)
         log_save(obs.LOG_INFO, f"开播返回：{start_live}")
         if start_live["success"]:
             log_save(obs.LOG_INFO, f"开播成功。")
@@ -12683,7 +12798,8 @@ class ButtonFunction:
             log_save(obs.LOG_ERROR, f"开播失败：【{start_live['message']}】。")
             return True
 
-        widget.ComboBox.liveStreamingPlatform.Text = list(widget.ComboBox.liveStreamingPlatform.DictionaryList.keys())[list(widget.ComboBox.liveStreamingPlatform.DictionaryList.values()).index(live_streaming_platform)]
+        widget.ComboBox.liveStreamingPlatform.Text = list(widget.ComboBox.liveStreamingPlatform.Dictionary.keys())[
+            list(widget.ComboBox.liveStreamingPlatform.Dictionary.values()).index(live_streaming_platform)]
         widget.ComboBox.liveStreamingPlatform.Value = live_streaming_platform
 
         # 推流地址
@@ -12729,7 +12845,8 @@ class ButtonFunction:
                     GlobalVariableOfData.causeOfTheFrontDeskIncident = "开始直播并复制推流码"
                     obs.obs_frontend_streaming_stop()
                 # 写入推流服务
-                obs.obs_data_set_string(streaming_service_settings, "service", "Bilibili Live - RTMP | 哔哩哔哩直播 - RTMP")
+                obs.obs_data_set_string(streaming_service_settings, "service",
+                                        "Bilibili Live - RTMP | 哔哩哔哩直播 - RTMP")
                 log_save(obs.LOG_INFO, f"向obs写入推流服务：【Bilibili Live - RTMP | 哔哩哔哩直播 - RTMP】")
                 # 写入推流地址
                 obs.obs_data_set_string(streaming_service_settings, "server", rtmp_server)
@@ -12847,7 +12964,8 @@ class ButtonFunction:
                                                           'live_streaming_platform_comboBox')
         log_save(obs.LOG_INFO, f"在【{live_streaming_platform}】平台 结束直播")
 
-        stop_live = get_b_csrf_a().stop_live(get_b_s_a_m().get_room_highlight_info()["data"]["room_id"], live_streaming_platform)
+        stop_live = get_b_csrf_a().stop_live(get_b_s_a_m().get_room_highlight_info()["data"]["room_id"],
+                                             live_streaming_platform)
         log_save(obs.LOG_INFO, f"停播返回：{stop_live}")
         if stop_live["success"]:
             log_save(obs.LOG_INFO, f"停播成功。")
@@ -12950,12 +13068,12 @@ class ButtonFunction:
             settings = args[2]
         # 获取直播预约天
         live_bookings_day = obs.obs_data_get_int(
-            GlobalVariableOfData.script_settings,widget.DigitalDisplay.liveBookingsDay.Name
+            GlobalVariableOfData.script_settings, widget.DigitalDisplay.liveBookingsDay.Name
         )
         log_save(obs.LOG_INFO, f"直播预约天: {live_bookings_day}")
         # 获取直播预约时
         live_bookings_hour = obs.obs_data_get_int(
-            GlobalVariableOfData.script_settings,widget.DigitalDisplay.liveBookingsHour.Name
+            GlobalVariableOfData.script_settings, widget.DigitalDisplay.liveBookingsHour.Name
         )
         log_save(obs.LOG_INFO, f"直播预约时: {live_bookings_hour}")
         # 获取直播预约分
@@ -12966,19 +13084,19 @@ class ButtonFunction:
 
         # 限制直播时间内范围
         if not (5 <= (live_bookings_day * 24 * 60 + live_bookings_hour * 60 + live_bookings_minute) <= 180 * 24 * 60):
-            log_save(obs.LOG_ERROR,f"直播预约时间需要大于 5min 以及 小于 59day")
+            log_save(obs.LOG_ERROR, f"直播预约时间需要大于 5min 以及 小于 59day")
             return False
         else:
             log_save(obs.LOG_INFO, f"直播预约时间: {live_bookings_day}天{live_bookings_hour}时{live_bookings_minute}分")
 
         # 获取直播预约标题
         live_bookings_title = obs.obs_data_get_string(
-            GlobalVariableOfData.script_settings,widget.TextBox.liveBookingsTitle.Name
+            GlobalVariableOfData.script_settings, widget.TextBox.liveBookingsTitle.Name
         )
         log_save(obs.LOG_INFO, f"直播预约标题: {live_bookings_title}")
         # 获取是否发动态
         live_bookings_dynamic_is = obs.obs_data_get_bool(
-            GlobalVariableOfData.script_settings,widget.CheckBox.liveBookingsDynamic.Name
+            GlobalVariableOfData.script_settings, widget.CheckBox.liveBookingsDynamic.Name
         )
         log_save(obs.LOG_INFO, f"直播预约是否发动态: {live_bookings_dynamic_is}")
 
@@ -13065,22 +13183,22 @@ class ButtonFunction:
             GlobalVariableOfData.script_settings, widget.DigitalDisplay.danmuNumCommentsClient.Name
         )
         number_of_comments_client = str(widget.DigitalDisplay.danmuNumCommentsClient.Value)
-        
+
         widget.DigitalDisplay.danmuIntervalNumCommentsClient.Value = obs.obs_data_get_int(
             GlobalVariableOfData.script_settings, widget.DigitalDisplay.danmuIntervalNumCommentsClient.Name
         )
         interval_number_of_comments_client = str(widget.DigitalDisplay.danmuIntervalNumCommentsClient.Value)
-        
+
         widget.CheckBox.enterRoomDisplay.Bool = obs.obs_data_get_bool(
             GlobalVariableOfData.script_settings, widget.CheckBox.enterRoomDisplay.Name
         )
         is_enter_room_display = "1" if widget.CheckBox.enterRoomDisplay.Bool else "0"
-        
+
         widget.CheckBox.medalDisplay.Bool = obs.obs_data_get_bool(
             GlobalVariableOfData.script_settings, widget.CheckBox.medalDisplay.Name
         )
         is_medal_display = "1" if widget.CheckBox.medalDisplay.Bool else "0"
-        
+
         widget.CheckBox.medalOtherDisplay.Bool = obs.obs_data_get_bool(
             GlobalVariableOfData.script_settings, widget.CheckBox.medalOtherDisplay.Name
         )
@@ -13090,52 +13208,52 @@ class ButtonFunction:
             GlobalVariableOfData.script_settings, widget.CheckBox.medalUnLightDisplay.Name
         )
         is_medal_un_light_display = "1" if widget.CheckBox.medalUnLightDisplay.Bool else "0"
-        
+
         widget.CheckBox.lineBreakDisplay.Bool = obs.obs_data_get_bool(
             GlobalVariableOfData.script_settings, widget.CheckBox.lineBreakDisplay.Name
         )
         is_line_break_display = "1" if widget.CheckBox.lineBreakDisplay.Bool else "0"
-        
+
         widget.CheckBox.tagAdministratorDisplay.Bool = obs.obs_data_get_bool(
             GlobalVariableOfData.script_settings, widget.CheckBox.tagAdministratorDisplay.Name
         )
         is_tag_administrator = "1" if widget.CheckBox.tagAdministratorDisplay.Bool else "0"
-        
+
         widget.CheckBox.timestampDisplay.Bool = obs.obs_data_get_bool(
             GlobalVariableOfData.script_settings, widget.CheckBox.timestampDisplay.Name
         )
         is_timestamp_display = "1" if widget.CheckBox.timestampDisplay.Bool else "0"
-        
+
         widget.DigitalDisplay.danmuNumCacheEntries.Value = obs.obs_data_get_int(
             GlobalVariableOfData.script_settings, widget.DigitalDisplay.danmuNumCacheEntries.Name
         )
         number_of_cache_entries = str(widget.DigitalDisplay.danmuNumCacheEntries.Value)
-        
+
         widget.DigitalDisplay.danmuCacheDuration.Value = obs.obs_data_get_int(
             GlobalVariableOfData.script_settings, widget.DigitalDisplay.danmuCacheDuration.Name
         )
         cache_duration = str(widget.DigitalDisplay.danmuCacheDuration.Value)
-        
+
         widget.DigitalDisplay.danmuFacePictureSize.Value = obs.obs_data_get_int(
             GlobalVariableOfData.script_settings, widget.DigitalDisplay.danmuFacePictureSize.Name
         )
         face_picture_size = str(widget.DigitalDisplay.danmuFacePictureSize.Value)
-        
+
         widget.DigitalDisplay.danmuFanMedalTextSize.Value = obs.obs_data_get_int(
             GlobalVariableOfData.script_settings, widget.DigitalDisplay.danmuFanMedalTextSize.Name
         )
         fan_medal_text_size = str(widget.DigitalDisplay.danmuFanMedalTextSize.Value)
-        
+
         widget.DigitalDisplay.danmuMessageTextSize.Value = obs.obs_data_get_int(
             GlobalVariableOfData.script_settings, widget.DigitalDisplay.danmuMessageTextSize.Name
         )
         message_text_size = str(widget.DigitalDisplay.danmuMessageTextSize.Value)
-        
+
         widget.DigitalDisplay.danmuTimeTextSize.Value = obs.obs_data_get_int(
             GlobalVariableOfData.script_settings, widget.DigitalDisplay.danmuTimeTextSize.Name
         )
         time_text_size = str(widget.DigitalDisplay.danmuTimeTextSize.Value)
-        
+
         setting = "/".join([
             number_of_comments_client,
             interval_number_of_comments_client,
@@ -13153,7 +13271,7 @@ class ButtonFunction:
             message_text_size,
             time_text_size
         ])
-        get_c_d_m().add_data(get_default_user()["value"], "danmuSetting", setting, 1)
+        get_c_d_m().add_data(get_b_u_c_m().get_default_user_id(), "danmuSetting", setting, 1)
         log_save(obs.LOG_INFO, f"弹幕默认值更改：{setting}")
         clear_cache()
         return False
@@ -13165,10 +13283,11 @@ class ButtonFunction:
             prop = args[1]
         if len(args) == 3:
             settings = args[2]
-        danmu_web_css_t: str = obs.obs_data_get_string(GlobalVariableOfData.script_settings, widget.TextBox.danmuWebCss.Name)
+        danmu_web_css_t: str = obs.obs_data_get_string(GlobalVariableOfData.script_settings,
+                                                       widget.TextBox.danmuWebCss.Name)
 
         get_c_d_m().add_data(
-            get_default_user()["value"],
+            get_b_u_c_m().get_default_user_id(),
             "danmuWebCss",
             danmu_web_css_t,
             1
@@ -13197,12 +13316,13 @@ class ButtonFunction:
             prop = args[1]
         if len(args) == 3:
             settings = args[2]
-        server_prot: str = obs.obs_data_get_string(GlobalVariableOfData.script_settings, widget.TextBox.danmuWssProt.Name)
+        server_prot: str = obs.obs_data_get_string(GlobalVariableOfData.script_settings,
+                                                   widget.TextBox.danmuWssProt.Name)
         log_save(obs.LOG_INFO, f"弹幕服务端口：{server_prot}")
         if not widget.TextBox.danmuWssProt.Text:
             log_save(obs.LOG_WARNING, "错误: 服务端口不合法")
             return False
-        get_c_d_m().add_data(get_default_user()["value"], "danmuWssProt", server_prot, 1)
+        get_c_d_m().add_data(get_b_u_c_m().get_default_user_id(), "danmuWssProt", server_prot, 1)
 
         clear_cache()
         # -----------------------------------------------------------------------------------------------------------
@@ -13228,17 +13348,19 @@ class ButtonFunction:
         if len(args) == 3:
             settings = args[2]
         room: str = obs.obs_data_get_string(GlobalVariableOfData.script_settings, widget.ComboBox.danmuRoom.Name)
-        if str(room) in list(widget.ComboBox.danmuRoom.DictionaryList.keys()):
-            room = list(widget.ComboBox.danmuRoom.DictionaryList.values())[list(widget.ComboBox.danmuRoom.DictionaryList.keys()).index(str(room))]
+        if str(room) in list(widget.ComboBox.danmuRoom.Dictionary.keys()):
+            room = list(widget.ComboBox.danmuRoom.Dictionary.values())[
+                list(widget.ComboBox.danmuRoom.Dictionary.keys()).index(str(room))]
         log_save(obs.LOG_INFO, f"添加直播间：{room}")
         room_base_info = get_b_a_g().get_room_base_info(int(room))
         log_save(obs.LOG_INFO, f"获取直播间基本信息: {room_base_info}")
         if room_base_info["success"]:
-            get_c_d_m().add_data(get_default_user()["value"], "danmuRoomid", str(room_base_info["data"]["room_id"]), 99)
+            get_c_d_m().add_data(get_b_u_c_m().get_default_user_id(), "danmuRoomid",
+                                 str(room_base_info["data"]["room_id"]), 99)
             log_save(obs.LOG_INFO, f"添加直播间：{room}成功")
         else:
             return False
-            
+
         clear_cache()
 
         # 更新脚本控制台中的控件
@@ -13270,10 +13392,12 @@ class ButtonFunction:
         if len(args) == 3:
             settings = args[2]
         room: str = obs.obs_data_get_string(GlobalVariableOfData.script_settings, widget.ComboBox.danmuRoom.Name)
-        if str(room) in list(widget.ComboBox.danmuRoom.DictionaryList.keys()):
-            room = list(widget.ComboBox.danmuRoom.DictionaryList.values())[list(widget.ComboBox.danmuRoom.DictionaryList.keys()).index(str(room))]
+        if str(room) in list(widget.ComboBox.danmuRoom.Dictionary.keys()):
+            room = list(widget.ComboBox.danmuRoom.Dictionary.values())[
+                list(widget.ComboBox.danmuRoom.Dictionary.keys()).index(str(room))]
         log_save(obs.LOG_INFO, f"删除直播间：{room}")
-        log_save(obs.LOG_INFO, str(get_c_d_m().remove_data(get_default_user()["value"], "danmuRoomid", str(room))))
+        log_save(obs.LOG_INFO,
+                 str(get_c_d_m().remove_data(get_b_u_c_m().get_default_user_id(), "danmuRoomid", str(room))))
 
         clear_cache()
 
@@ -13305,6 +13429,7 @@ class ButtonFunction:
             prop = args[1]
         if len(args) == 3:
             settings = args[2]
+
         # -----------------------------------------------------------------------------------------------------------
         # 启动弹幕服务-------------------------------------------------------------------------------------------------
         async def show_danmu():
@@ -13420,7 +13545,7 @@ class ButtonFunction:
                 content_str = content_bytes.decode('utf-8')
 
                 log_save(obs.LOG_INFO,
-                    f"包总长度: {package_len} 字节\t头部长度: {head_length} 字节\t协议版本: {prot_ver}\t操作码: {opt_code} (8 = 认证回复)\t序列号: {sequence}\t正文内容: {content_str}\t")
+                         f"包总长度: {package_len} 字节\t头部长度: {head_length} 字节\t协议版本: {prot_ver}\t操作码: {opt_code} (8 = 认证回复)\t序列号: {sequence}\t正文内容: {content_str}\t")
 
             def send_heartbeat():
                 log_save(obs.LOG_INFO, "发送心跳")
@@ -13635,7 +13760,9 @@ class ButtonFunction:
                         pattern = r'(\[.*?\])'
                         emoji_name_text_separation_list = re.split(pattern, damu_text)
                         """分离的带‘[]’的表情名称和普通文本"""
-                        pattern = r'(' + '|'.join([re.escape(sep) for sep in list(get_common_danmu_own_big_expression().keys()) + list(danmu_extra['emots'] if danmu_extra['emots'] else [])]) + ')'
+                        pattern = r'(' + '|'.join([re.escape(sep) for sep in
+                                                   list(get_common_danmu_own_big_expression().keys()) + list(
+                                                       danmu_extra['emots'] if danmu_extra['emots'] else [])]) + ')'
                         emoji_text_own_separation_list = re.split(pattern, damu_text)
                         for damu_split in emoji_text_own_separation_list:
                             if not damu_split:
@@ -13667,7 +13794,9 @@ class ButtonFunction:
                                     own_big_expression_path = Path(get_common_danmu_own_big_expression()[damu_split])
                                     _own_big_expression_path = str(own_big_expression_path).replace('\\', '/')
                                     img_path_in_web = f"./img/own/{re.split('/', _own_big_expression_path)[-1]}"
-                                    Path(GlobalVariableOfData.scriptsDataDirpath / img_path_in_web.replace('./', '')).parent.mkdir(parents=True, exist_ok=True)
+                                    Path(GlobalVariableOfData.scriptsDataDirpath / img_path_in_web.replace('./',
+                                                                                                           '')).parent.mkdir(
+                                        parents=True, exist_ok=True)
                                     img_c = Image.open(own_big_expression_path)
                                     width, height = img_c.size
                                     message_data.append({
@@ -14684,21 +14813,27 @@ class ButtonFunction:
                     guard_dict[uid] = guard_level
 
             ws_server = WebSocketServer(port=int(widget.TextBox.danmuWssProt.Text))
-            ws_server.registerCallback = lambda clients_count: log_save(obs.LOG_INFO, f"新的网页客户端连接，当前连接数: {clients_count}")
-            ws_server.unregisterCallback = lambda clients_count: log_save(obs.LOG_INFO, f"网页客户端断开，当前连接数: {clients_count}")
-            ws_server.startServerCallback = lambda host, port: log_save(obs.LOG_INFO, f"弹幕转发服务器启动在 ws://{host}:{port}")
+            ws_server.registerCallback = lambda clients_count: log_save(obs.LOG_INFO,
+                                                                        f"新的网页客户端连接，当前连接数: {clients_count}")
+            ws_server.unregisterCallback = lambda clients_count: log_save(obs.LOG_INFO,
+                                                                          f"网页客户端断开，当前连接数: {clients_count}")
+            ws_server.startServerCallback = lambda host, port: log_save(obs.LOG_INFO,
+                                                                        f"弹幕转发服务器启动在 ws://{host}:{port}")
             ws_server.serverCancelledCallback = lambda: log_save(obs.LOG_INFO, "WebSocket 服务器被取消")
             ws_server.serverErroCallback = lambda ero: log_save(obs.LOG_INFO, f"WebSocket 服务器错误: {ero}")
             ws_server.serverStopCallback = lambda: log_save(obs.LOG_INFO, "WebSocket 服务器已停止")
 
-            cdm = get_b_l_d_m().connect_room(int(widget.ComboBox.danmuRoom.Value), widget.DigitalDisplay.danmuNumCommentsClient.Value, widget.DigitalDisplay.danmuIntervalNumCommentsClient.Value / 1000)
+            cdm = get_b_l_d_m().connect_room(int(widget.ComboBox.danmuRoom.Value),
+                                             widget.DigitalDisplay.danmuNumCommentsClient.Value,
+                                             widget.DigitalDisplay.danmuIntervalNumCommentsClient.Value / 1000)
             cdm.o_m_d.max_size = widget.DigitalDisplay.danmuNumCacheEntries.Value
             cdm.o_m_d.ttl_seconds = widget.DigitalDisplay.danmuCacheDuration.Value
-            cdm.replyAuthenticationPackageCallable = lambda content: log_save(obs.LOG_INFO, f"身份验证回复: {content}\n")
+            cdm.replyAuthenticationPackageCallable = lambda content: log_save(obs.LOG_INFO,
+                                                                              f"身份验证回复: {content}\n")
             cdm.ordinaryBagCallable = danmu_processing
             cdm.sendAuthenticationPackageReplyCallable = reply_with_a_callback_after_verification
             cdm.connectionFailureCallback = lambda delay, retry_count: log_save(obs.LOG_INFO,
-                f"连接失败，{delay}秒后重试... (重试次数: {retry_count})")
+                                                                                f"连接失败，{delay}秒后重试... (重试次数: {retry_count})")
             cdm.authenticationResponseTimeoutCallback = lambda: log_save(obs.LOG_INFO, "认证响应超时")
             cdm.authenticationFailureCallback = lambda e: log_save(obs.LOG_INFO, f"认证失败: {e}")
             cdm.heartRateCallback = send_heartbeat
@@ -14725,12 +14860,15 @@ class ButtonFunction:
             finally:
                 await ws_server.stop_server_async()
                 await cdm.stop_async()
+
         if not GlobalVariableOfData.danmu_run_status:
             log_save(obs.LOG_INFO, f"开启弹幕服务")
             GlobalVariableOfData.danmu_running = True
+
             def start():
                 GlobalVariableOfData.danmuLog = ''
                 asyncio.run(show_danmu())
+
             show_danmu_thread = threading.Thread(target=start)
             show_danmu_thread.daemon = True
             show_danmu_thread.start()
@@ -29864,7 +30002,7 @@ class ButtonFunction:
 
                                 this.socket = new WebSocket('ws://localhost:"""
         html_content += widget.TextBox.danmuWssProt.Text
-        html_content +=  """');
+        html_content += """');
 
                                 this.socket.onopen = () => {
                                     this.reconnectAttempts = 0;
@@ -30189,9 +30327,9 @@ class ButtonFunction:
         # -----------------------------------------------------------------------------------------------------------
         # 添加网页源-------------------------------------------------------------------------------------------------
         ButtonFunction.button_function_add_danmu_browser()
-        
+
         return True
-    
+
     @staticmethod
     def button_function_stop_danmu_forwarding_service(*args):
         if len(args) == 2:
@@ -30285,7 +30423,7 @@ class ButtonFunction:
         # -----------------------------------------------------------------------------------------------------------
         # 移除浏览器源-------------------------------------------------------------------------------------------------
         ButtonFunction.button_function_remove_danmu_browser()
-        
+
         return True
 
     @staticmethod
@@ -30325,7 +30463,7 @@ class ButtonFunction:
         # -----------------------------------------------------------------------------------------------------------
         # 发送弹幕----------------------------------------------------------------------------------------------------
         send_danmu_ts = [seg for seg in re.split("\n", send_danmu_t_source) if seg]
-        emjio_list = list(widget.ComboBox.danmuEmoticons.DictionaryList.keys())
+        emjio_list = list(widget.ComboBox.danmuEmoticons.Dictionary.keys())
 
         def run():
             def fastout(send_danmaku_return, send_danmu_t):
@@ -30345,6 +30483,7 @@ class ButtonFunction:
                         log_save(obs.LOG_INFO, f"{send_danmaku_return['message']}{send_danmaku_return['error']}")
                         return False
                 return True
+
             def lenout(send_danmaku_return, send_danmu_t):
                 log_save(obs.LOG_INFO, f"{send_danmaku_return['error']}")
                 str_len_max = 40
@@ -30388,7 +30527,8 @@ class ButtonFunction:
                                 if not fastout(send_danmaku_return, ''.join(current_group)):
                                     return False
                             else:
-                                log_save(obs.LOG_INFO, f"{send_danmaku_return['message']}{send_danmaku_return['error']}")
+                                log_save(obs.LOG_INFO,
+                                         f"{send_danmaku_return['message']}{send_danmaku_return['error']}")
                                 return False
                         # 开始新分组
                         current_group = [seg]
@@ -30410,6 +30550,7 @@ class ButtonFunction:
                         log_save(obs.LOG_INFO, f"{send_danmaku_return['message']}{send_danmaku_return['error']}")
                         return False
                 return True
+
             for send_danmu_t in send_danmu_ts:
                 send_danmaku_return = get_w_s_a().send_danmu(int(widget.ComboBox.danmuRoom.Value), send_danmu_t)
                 log_save(obs.LOG_INFO, f"发送：{send_danmu_t}")
@@ -30424,6 +30565,7 @@ class ButtonFunction:
                 else:
                     log_save(obs.LOG_INFO, f"{send_danmaku_return['message']}{send_danmaku_return['error']}")
             clear_cache()
+
         ds = threading.Thread(target=run)
         ds.daemon = True
         ds.start()
@@ -30475,16 +30617,19 @@ class ButtonFunction:
             prop = args[1]
         if len(args) == 3:
             settings = args[2]
-        widget_visibility_dict_old = get_c_d_m().get_data(get_default_user()["value"], "widgetVisibility")
+        widget_visibility_dict_old = get_c_d_m().get_data(get_b_u_c_m().get_default_user_id(), "widgetVisibility")
         widget_visibility_old_dict = json.loads(widget_visibility_dict_old[0])
         widget_visibility_dict = {}
         for w in widget.get_sorted_controls():
             if w.ControlType == "Group":
                 if w.Type == obs.OBS_GROUP_CHECKABLE:
-                    widget_visibility_dict[w.GroupProps] = "1" if obs.obs_data_get_bool(GlobalVariableOfData.script_settings, w.Name) else "0"
+                    widget_visibility_dict[w.GroupProps] = "1" if obs.obs_data_get_bool(
+                        GlobalVariableOfData.script_settings, w.Name) else "0"
         widget_visibility_dict_ = json.dumps(widget_visibility_dict, ensure_ascii=False)
-        get_c_d_m().add_data(get_default_user()["value"], "widgetVisibility", widget_visibility_dict_, 1)
-        updata_ps_list = [key for key in widget_visibility_dict if key in widget_visibility_old_dict and widget_visibility_dict[key] != widget_visibility_old_dict[key]]
+        get_c_d_m().add_data(get_b_u_c_m().get_default_user_id(), "widgetVisibility", widget_visibility_dict_, 1)
+        updata_ps_list = [key for key in widget_visibility_dict if
+                          key in widget_visibility_old_dict and widget_visibility_dict[key] !=
+                          widget_visibility_old_dict[key]]
 
         clear_cache()
 
