@@ -8334,6 +8334,12 @@ class BilibiliCSRFAuthenticator:
 
             api = "https://api.live.bilibili.com/room/v1/Room/startLive"
             headers = self.headers
+            if platform == 'pc_link':
+                headers[
+                    'User-Agent'] = 'LiveHime/8.2.0.10943 os/Windows pc_app/livehime build/10943 osVer/10.0.19045_x86_64'
+            elif platform == 'android_link':
+                # android_link 使用移动端 UA
+                headers['User-Agent'] = 'BiliApp/7.20.0 (Android 13; Pixel 6)'
             csrf = self.csrf
 
             # 构建请求参数
@@ -8343,7 +8349,7 @@ class BilibiliCSRFAuthenticator:
                 "platform": platform,
                 "room_id": room_id,
                 "area_v2": area_id,
-                "build": "9343",  # 客户端版本号
+                "build": "10943",  # 客户端版本号
                 "backup_stream": 0,
                 "csrf": csrf,
                 "csrf_token": csrf,
