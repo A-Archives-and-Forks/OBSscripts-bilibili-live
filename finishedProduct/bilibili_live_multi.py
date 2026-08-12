@@ -14,7 +14,9 @@
 #         You should have received a copy of the GNU General Public License
 #         along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #         2436725966@qq.com
+import urllib3
 
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 import asyncio
 import base64
 import hashlib
@@ -47,7 +49,6 @@ import pyperclip as cb
 import qrcode.main  # 必须这样，不能只 import qrcode
 import requests
 import urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 import websockets
 from PIL import Image, ImageOps
 from requests.exceptions import SSLError
@@ -55,6 +56,8 @@ from werkzeug.serving import make_server
 
 import obspython as obs
 
+
+# import websockets
 
 def script_path():
     """
@@ -142,6 +145,23 @@ class SslErrorCode:
 
 
 # 工具类函数
+def log_request(title, method, url, headers, params=None, data=None):
+    log_save(obs.LOG_DEBUG, f"[{title}] {method} {url}")
+    if headers:
+        log_save(obs.LOG_DEBUG, f"[{title}] Headers: {json.dumps(dict(headers), ensure_ascii=False)}")
+    if params:
+        log_save(obs.LOG_DEBUG, f"[{title}] Params: {json.dumps(params, ensure_ascii=False)}")
+    if data:
+        log_save(obs.LOG_DEBUG, f"[{title}] Data: {json.dumps(data, ensure_ascii=False)}")
+
+def log_response(title, response):
+    log_save(obs.LOG_DEBUG, f"[{title}] Status: {response.status_code}")
+    log_save(obs.LOG_DEBUG, f"[{title}] Headers: {json.dumps(dict(response.headers), ensure_ascii=False)}")
+    set_cookie = response.headers.get('Set-Cookie', '')
+    if set_cookie:
+        log_save(obs.LOG_DEBUG, f"[{title}] Set-Cookie: {set_cookie}")
+    log_save(obs.LOG_DEBUG, f"[{title}] Cookies: {response.cookies.get_dict()}")
+
 class Tools:
     """工具函数"""
 
@@ -291,8 +311,7 @@ class Tools:
 
     @staticmethod
     def check_ssl_verification(test_url="https://api.bilibili.com",
-                               timeout=5) -> Dict[
-        str, Union[str, int, bool, Dict[str, Optional[Union[str, int, bool]]]]]:
+                               timeout=5) -> Dict[str, Union[str, int, bool, Dict[str, Optional[Union[str, int, bool]]]]]:
         """
         检测 SSL 证书验证是否可用
 
@@ -3489,22 +3508,9 @@ class BilibiliLogInRegister:
 
     def poll(self, qrcode_key: str) -> Dict[str, Any]:
         """
-        获取扫码登陆状态，登陆成功获取基础的cookies
-
-        Args:
-            qrcode_key: 扫描秘钥
-
-        Returns:
-            包含操作结果的字典：
-            - success: 操作是否成功
-            - message: 结果描述信息
-            - data: 成功时的数据（包含扫码状态和cookies信息）
-            - error: 失败时的错误信息
-            - status_code: HTTP状态码
-            - api_code: B站API返回的状态码
+        获取扫码登陆状态，登陆成功时返回包含 login_url 的数据（由调用方处理重定向）
         """
         try:
-            # 验证输入参数
             if not qrcode_key or not isinstance(qrcode_key, str):
                 return {
                     "success": False,
@@ -3515,16 +3521,15 @@ class BilibiliLogInRegister:
                 }
 
             api = f'https://passport.bilibili.com/x/passport-login/web/qrcode/poll?qrcode_key={qrcode_key}'
-
-            # 发送请求
+            log_request("Poll", "GET", api, self.headers)
             response = requests.get(
                 url=api,
                 headers=self.headers,
                 verify=self.verify_ssl,
                 timeout=10
             )
+            log_response("Poll", response)
 
-            # 检查HTTP状态码
             if response.status_code != 200:
                 return {
                     "success": False,
@@ -3535,7 +3540,6 @@ class BilibiliLogInRegister:
                     "response_text": response.text
                 }
 
-            # 解析响应
             try:
                 result = response.json()
             except ValueError as e:
@@ -3547,7 +3551,6 @@ class BilibiliLogInRegister:
                     "api_code": None
                 }
 
-            # 检查API返回状态码
             api_code = result.get("code", -1)
             if api_code != 0:
                 error_msg = result.get("message") or result.get("msg") or "未知错误"
@@ -3560,7 +3563,6 @@ class BilibiliLogInRegister:
                     "response_data": result
                 }
 
-            # 检查数据是否存在
             data = result.get("data")
             if not data:
                 return {
@@ -3572,21 +3574,16 @@ class BilibiliLogInRegister:
                     "response_data": result
                 }
 
-            # 提取扫码状态码和消息
             scan_code = data.get("code")
             scan_message = data.get("message", "")
-
-            # 根据扫码状态码判断扫码状态
             status_mapping = {
                 0: "扫码登录成功",
                 86038: "二维码已失效",
                 86090: "二维码已扫码未确认",
                 86101: "未扫码"
             }
-
             status_message = status_mapping.get(scan_code, f"未知状态码: {scan_code}")
 
-            # 构建返回数据
             result_data = {
                 "scan_code": scan_code,
                 "scan_message": scan_message,
@@ -3596,12 +3593,11 @@ class BilibiliLogInRegister:
                 "timestamp": data.get("timestamp", 0)
             }
 
-            # 如果扫码成功，提取cookies信息
+            # 登录成功时，将登录回调 URL 也返回，由调用方自行处理重定向
             if scan_code == 0:
-                url = data.get("url", "")
-                # 从URL中提取cookies参数
-                cookies_info = self._extract_cookies_from_url(url)
-                result_data.update(cookies_info)
+                login_url = data.get("url", "")
+                result_data["login_url"] = login_url
+                # 注意：此时不提取 cookie，让调用方通过 session 获取完整 cookie
 
             return {
                 "success": True,
@@ -6636,6 +6632,8 @@ class BilibiliCSRFAuthenticator:
 
             self.user_id = self.cookies["DedeUserID"]
             self.csrf = self.cookies["bili_jct"]
+            # 新增：提取 buvid3
+            self.buvid3 = self.cookies.get("buvid3", "")
 
             return {
                 "success": True,
@@ -8279,9 +8277,10 @@ class BilibiliCSRFAuthenticator:
                 "api_code": None
             }
 
-    def start_live(self, room_id: int, area_id: int, platform: Literal["pc_link", "web_link", "android_link"]) -> Dict:
+    def start_live(self, room_id: int, area_id: int, platform: Literal["pc_link", "web_link", "android_link"]) -> Dict[
+        str, Any]:
         """
-        开始直播
+        开始直播（模拟官方客户端请求）
 
         Args:
             room_id: 直播间ID
@@ -8336,42 +8335,73 @@ class BilibiliCSRFAuthenticator:
                     "api_code": None
                 }
 
-            api = "https://api.live.bilibili.com/room/v1/Room/startLive"
-            headers = self.headers
-            csrf = self.csrf
+            # ---- 平台配置映射 ----
+            platform_config = {
+                "pc_link": {
+                    "user_agent": "LiveHime/7.64.0.10819 os/Windows pc_app/livehime build/10819 osVer/10.0_x86_64",
+                    "build": "10819",
+                    "version": "7.64.0.10819"
+                },
+                "web_link": {
+                    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "build": "9343",
+                    "version": ""
+                },
+                "android_link": {
+                    "user_agent": "BiliApp/7.20.0 (Android 13; Pixel 6)",
+                    "build": "9343",
+                    "version": "7.20.0"
+                }
+            }
 
-            # 构建请求参数
-            startLivedata = {
-                "access_key": "",  # 留空
-                "appkey": "aae92bc66f3edfab",  # 固定应用密钥
+            config = platform_config[platform]
+
+            # ---- 复制请求头，避免污染原始 self.headers ----
+            headers = self.headers.copy()
+            headers["User-Agent"] = config["user_agent"]
+            headers["Content-Type"] = "application/x-www-form-urlencoded"
+
+            # 添加 buvid 头部（如果有）
+            if hasattr(self, "buvid3") and self.buvid3:
+                headers["buvid"] = self.buvid3
+
+            # 添加 X-Event-TraceID（模拟直播姬）
+            if platform == "pc_link":
+                import uuid
+                trace_id = f"PC_LINK:{uuid.uuid4()}:{int(time.time() * 1000)}"
+                headers["X-Event-TraceID"] = trace_id
+
+            csrf = self.csrf
+            ts = str(int(time.time()))
+
+            # ---- 构建请求参数（包含 type=2 和 version） ----
+            start_data = {
+                "access_key": "",
+                "appkey": "aae92bc66f3edfab",
                 "platform": platform,
                 "room_id": room_id,
                 "area_v2": area_id,
-                "build": "9343",  # 客户端版本号
+                "build": config["build"],
                 "backup_stream": 0,
                 "csrf": csrf,
                 "csrf_token": csrf,
-                "ts": str(int(time.time()))  # 当前UNIX时间戳
+                "ts": ts,
+                "type": 2,  # 抓包中存在的额外参数
+                "version": config["version"]  # 版本参数
             }
 
-            # 对参数按字典序排序
-            sorted_params = sorted(startLivedata.items(), key=lambda x: x[0])
-
-            # 生成签名字符串 (参数串 + 固定盐值)
+            # ---- 排序并生成签名 ----
+            sorted_params = sorted(start_data.items(), key=lambda x: x[0])
             query_string = "&".join(f"{k}={v}" for k, v in sorted_params)
             sign_string = query_string + "af125a0d5279fd576c1b4418a3e8276d"
-
-            # 计算MD5签名
             md5_sign = hashlib.md5(sign_string.encode('utf-8')).hexdigest()
+            start_data["sign"] = md5_sign
 
-            # 添加签名到参数
-            startLivedata["sign"] = md5_sign
-
-            # 发送请求
+            # ---- 发送请求（参数放在 URL 查询字符串中） ----
             response = requests.post(
-                url=api,
+                url="https://api.live.bilibili.com/room/v1/Room/startLive",
                 headers=headers,
-                params=startLivedata,
+                params=start_data,  # 使用 params，数据放在 URL 查询串中
                 verify=self.verify_ssl,
                 timeout=30
             )
@@ -8393,7 +8423,6 @@ class BilibiliCSRFAuthenticator:
 
             # 判断开播结果
             if api_code == 0:
-                # 开播成功或重复开播
                 change_status = result.get("data", {}).get("change", 0)
                 if change_status == 1:
                     message = "开播成功"
@@ -8408,7 +8437,6 @@ class BilibiliCSRFAuthenticator:
                     "api_code": api_code
                 }
             else:
-                # 开播失败
                 error_msg = result.get("message", "未知错误")
                 return {
                     "success": False,
@@ -11572,8 +11600,8 @@ def script_defaults(settings):  # 设置其默认值
 
     widget_specific_object = widget.Button.addDanmuBrowser
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
-        widget_specific_object.Enabled = True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else False
+        widget_specific_object.Enabled = False
 
     widget_specific_object = widget.Button.startDanmu
     if widget_specific_object.Name in update_widget_for_props_name:
@@ -11582,18 +11610,18 @@ def script_defaults(settings):  # 设置其默认值
 
     widget_specific_object = widget.Button.stopDanmuForwardingService
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
-        widget_specific_object.Enabled = True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else False
+        widget_specific_object.Enabled = False
 
     widget_specific_object = widget.Button.removeDanmuBrowser
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
-        widget_specific_object.Enabled = True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else False
+        widget_specific_object.Enabled = False
 
     widget_specific_object = widget.Button.stopDanmu
     if widget_specific_object.Name in update_widget_for_props_name:
-        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else False
-        widget_specific_object.Enabled = False
+        widget_specific_object.Visible = False if widget_specific_object.Name in psg_unv_name else True if get_b_u_c_m().get_default_user_id() else False
+        widget_specific_object.Enabled = True if get_b_u_c_m().get_default_user_id() else False
 
     # 分组框【弹幕发送】
     # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -12040,6 +12068,9 @@ class ButtonFunction:
 
     @staticmethod
     def button_function_qr_add_account(*args):
+        """
+        二维码添加账号（新版：使用 Session 跟随重定向获取完整 Cookie）
+        """
         if len(args) == 2:
             props = args[0]
             prop = args[1]
@@ -12051,11 +12082,16 @@ class ButtonFunction:
             return ButtonFunction.button_function_show_qr_picture()
 
         # 1. 申请登录二维码
-        url8qrkey = get_b_l_i_r().generate()["data"]
-        url = url8qrkey['url']
-        log_save(obs.LOG_INFO, f"获取登录二维码链接{url}")
-        GlobalVariableOfData.loginQrCode_key = url8qrkey['qrcode_key']
-        log_save(obs.LOG_INFO, f"获取登录二维码密钥{GlobalVariableOfData.loginQrCode_key}")
+        log_save(obs.LOG_INFO, "正在申请登录二维码...")
+        gen_result = get_b_l_i_r().generate()
+        if not gen_result["success"]:
+            log_save(obs.LOG_ERROR, f"申请二维码失败: {gen_result.get('error', '未知错误')}")
+            return False
+
+        url = gen_result["data"]["url"]
+        qrcode_key = gen_result["data"]["qrcode_key"]
+        log_save(obs.LOG_INFO, f"获取登录二维码链接: {url}")
+        log_save(obs.LOG_INFO, f"获取登录二维码密钥: {qrcode_key}")
 
         # 生成二维码并保存
         qr = Tools.qr_text8pil_img(url)
@@ -12064,75 +12100,166 @@ class ButtonFunction:
         log_save(obs.LOG_INFO, "字符串二维码已输出，如果乱码或者扫描不上，建议再次点击 按钮【二维码添加账号】获取图片")
 
         # 2. 首次轮询（获取初始状态）
-        GlobalVariableOfData.loginQrCodeReturn = get_b_l_i_r().poll(GlobalVariableOfData.loginQrCode_key)
         log_save(obs.LOG_INFO, "开始轮询登录状态")
-        log_save(obs.LOG_WARNING, str(ExplanatoryDictionary.information4login_qr_return_code.get(
-            int(GlobalVariableOfData.loginQrCodeReturn["data"]["scan_code"]), "未知状态")
-        ))
+        poll_result = get_b_l_i_r().poll(qrcode_key)
+        if poll_result["success"]:
+            scan_code = poll_result["data"].get("scan_code")
+            status_desc = poll_result["data"].get("status_description", "未知状态")
+            log_save(obs.LOG_INFO, f"当前扫码状态: {status_desc} (code={scan_code})")
+            GlobalVariableOfData.loginQrCodeReturn = poll_result["data"]
+        else:
+            log_save(obs.LOG_ERROR, f"轮询失败: {poll_result.get('error', '未知错误')}")
+            return False
 
         # 3. 定义轮询回调函数（内部使用）
         def check_poll():
+            nonlocal qrcode_key
             should_stop = False
             try:
-                code_old = GlobalVariableOfData.loginQrCodeReturn["data"]["scan_code"]
-                GlobalVariableOfData.loginQrCodeReturn = get_b_l_i_r().poll(GlobalVariableOfData.loginQrCode_key)
-                new_code = GlobalVariableOfData.loginQrCodeReturn["data"]["scan_code"]
-                if code_old != new_code:
-                    log_save(obs.LOG_WARNING, str(ExplanatoryDictionary.information4login_qr_return_code.get(
-                        new_code, "未知状态")
-                    ))
-
-                if new_code in (0, 86038):
-                    log_save(obs.LOG_INFO, "轮询结束")
-                    GlobalVariableOfData.loginQRCodePillowImg = None
-                    if new_code == 0:
-                        cookies = GlobalVariableOfData.loginQrCodeReturn.get('data', {})
-                        if cookies.get('url'):
-                            # 1. 获取 buvid3 / buvid4
-                            buvid_info = get_i_c().get_buvid_info()
-                            if buvid_info.get("success") and buvid_info.get("data") is not None:
-                                cookies["buvid3"] = buvid_info['data']['b_3']
-                                cookies["buvid4"] = buvid_info['data']['b_4']
-                            else:
-                                log_save(obs.LOG_ERROR, f"获取 buvid 失败: {buvid_info.get('message', '未知错误')}")
-                                # 即使失败也不终止，可以尝试从其他途径获取，但此处选择继续（buvid3 可能不是必需的）
-                                # 可考虑生成随机 buvid3
-                                cookies["buvid3"] = "".join(random.choices("0123456789ABCDEF", k=32)) + "infoc"
-                                cookies["buvid4"] = ""
-
-                            # 2. 获取 b_nut
-                            buvid3_and_bnut = get_i_c().fetch_buvid3_and_bnut()
-                            if buvid3_and_bnut.get("success") and buvid3_and_bnut.get("data") is not None:
-                                cookies["b_nut"] = buvid3_and_bnut['data']['b_nut']
-                            else:
-                                log_save(obs.LOG_WARNING,
-                                         f"获取 b_nut 失败: {buvid3_and_bnut.get('message', '未知错误')}")
-                                # 使用当前时间戳作为备用
-                                cookies["b_nut"] = str(int(time.time()))
-
-                            # 保存用户
-                            uid = int(cookies.get('DedeUserID', 0))
-                            if uid <= 0:
-                                log_save(obs.LOG_ERROR, "无法获取用户ID")
-                                return
-                            all_users = [u["user_id"] for u in get_b_u_c_m().get_all_users()["data"]["users"]]
-                            if str(uid) in all_users:
-                                get_b_u_c_m().update_user(cookies, False)
-                            else:
-                                get_b_u_c_m().add_user(cookies)
-                                if widget.ComboBox.uid.Dictionary == {'添加或选择一个账号登录': '-1'}:
-                                    get_b_u_c_m().update_user(cookies, True)
-                        else:
-                            log_save(obs.LOG_INFO, "登录成功但未获取到有效 cookies")
-                    else:
-                        log_save(obs.LOG_INFO,
-                                 f"扫码状态: {ExplanatoryDictionary.information4login_qr_return_code.get(new_code, '未知')}")
-                    clear_cache()
+                # 调用 poll 获取最新状态
+                poll_result = get_b_l_i_r().poll(qrcode_key)
+                if not poll_result["success"]:
+                    log_save(obs.LOG_ERROR, f"轮询请求失败: {poll_result.get('error', '')}")
                     should_stop = True
                     return
 
+                data = poll_result["data"]
+                scan_code = data.get("scan_code")
+                status_desc = data.get("status_description", "未知状态")
+                log_save(obs.LOG_DEBUG, f"当前扫码状态: {status_desc} (code={scan_code})")
+                GlobalVariableOfData.loginQrCodeReturn = data
+
+                if scan_code == 0:
+                    # ========== 登录成功，使用 Session 获取完整 Cookie ==========
+                    login_url = data.get("login_url", "")
+                    if not login_url:
+                        log_save(obs.LOG_ERROR, "登录成功但未返回回调 URL")
+                        should_stop = True
+                        return
+
+                    log_save(obs.LOG_INFO, f"登录回调 URL: {login_url}")
+                    log_save(obs.LOG_INFO, "正在通过重定向链获取完整 Cookie...")
+
+                    # 创建 Session 并设置请求头（模拟浏览器）
+                    session = requests.Session()
+                    session.headers.update({
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+                        'Connection': 'keep-alive',
+                        'Upgrade-Insecure-Requests': '1',
+                        'Sec-Fetch-Dest': 'document',
+                        'Sec-Fetch-Mode': 'navigate',
+                        'Sec-Fetch-Site': 'cross-site',
+                        'Sec-Fetch-User': '?1',
+                        'Cache-Control': 'max-age=0',
+                        'Referer': 'https://passport.bilibili.com/',
+                        'Origin': 'https://passport.bilibili.com'
+                    })
+
+                    # 第一步：访问回调 URL（禁止自动重定向）
+                    log_save(obs.LOG_INFO, "请求1: 访问登录回调 URL (禁止自动重定向)")
+                    log_request("请求1", "GET", login_url, session.headers)
+                    resp1 = session.get(login_url, allow_redirects=False, timeout=10)
+                    log_response("响应1", resp1)
+
+                    if resp1.status_code in (301, 302, 303, 307, 308):
+                        location = resp1.headers.get('Location')
+                        if location:
+                            log_save(obs.LOG_INFO, f"重定向到: {location}")
+                            log_save(obs.LOG_INFO, "请求2: 跟随重定向 (允许自动重定向)")
+                            log_request("请求2", "GET", location, session.headers)
+                            resp2 = session.get(location, allow_redirects=True, timeout=10)
+                            log_response("响应2", resp2)
+                        else:
+                            log_save(obs.LOG_ERROR, "重定向响应缺少 Location 头")
+                            should_stop = True
+                            return
+                    else:
+                        # 如果没有重定向，尝试直接访问 gourl（从 resp1 或解析 login_url 获取）
+                        log_save(obs.LOG_INFO, "未收到重定向，尝试直接访问 gourl")
+                        # 从 login_url 中提取 gourl 参数
+                        parsed = urllib.parse.urlparse(login_url)
+                        query = urllib.parse.parse_qs(parsed.query)
+                        gourl = query.get('gourl', ['https://www.bilibili.com'])[0]
+                        log_save(obs.LOG_INFO, f"gourl: {gourl}")
+                        log_request("请求2", "GET", gourl, session.headers)
+                        resp2 = session.get(gourl, allow_redirects=True, timeout=10)
+                        log_response("响应2", resp2)
+
+                    # 获取完整的 cookies
+                    cookies_dict = session.cookies.get_dict()
+                    log_save(obs.LOG_INFO, f"获取到的完整 Cookies 键: {list(cookies_dict.keys())}")
+
+                    # 提取必需字段
+                    cookies = {
+                        'DedeUserID': cookies_dict.get('DedeUserID', ''),
+                        'DedeUserID__ckMd5': cookies_dict.get('DedeUserID__ckMd5', ''),
+                        'SESSDATA': cookies_dict.get('SESSDATA', ''),
+                        'bili_jct': cookies_dict.get('bili_jct', ''),
+                        'buvid3': cookies_dict.get('buvid3', ''),
+                        'b_nut': cookies_dict.get('b_nut', ''),
+                    }
+                    # 补全其他字段（如果有）
+                    for k, v in cookies_dict.items():
+                        if k not in cookies:
+                            cookies[k] = v
+
+                    # 验证关键字段
+                    required_basic = ['DedeUserID', 'SESSDATA', 'bili_jct']
+                    missing = [k for k in required_basic if not cookies.get(k)]
+                    if missing:
+                        log_save(obs.LOG_ERROR, f"提取的 Cookie 不完整，缺少: {', '.join(missing)}")
+                        log_save(obs.LOG_INFO, f"当前 cookies: {cookies}")
+                        should_stop = True
+                        return
+
+                    uid = cookies['DedeUserID']
+                    log_save(obs.LOG_INFO, f"✅ 扫码登录成功，用户ID: {uid}")
+
+                    # 调用账户管理器保存/更新用户
+                    # 获取额外的 buvid3 / buvid4 / b_nut（如果需要，也可以从 cookies 中获取）
+                    # 如果某些字段缺失，可以使用备用生成（此处省略，可参照新版 ImproveCookies）
+                    # 直接保存用户
+                    all_users = [u["user_id"] for u in get_b_u_c_m().get_all_users()["data"]["users"]]
+                    if str(uid) in all_users:
+                        get_b_u_c_m().update_user(cookies, False)
+                        log_save(obs.LOG_INFO, f"用户 {uid} 已更新")
+                    else:
+                        # 需要解码的字段列表（可根据实际情况扩展）
+                        fields_to_decode = ['SESSDATA', 'DedeUserID__ckMd5', 'bili_jct', 'buvid3', 'b_nut']
+                        for field in fields_to_decode:
+                            if field in cookies and cookies[field]:
+                                cookies[field] = urllib.parse.unquote(cookies[field])
+
+                        # 经过解码后，SESSDATA 中的 %2C 会变为 , ，%2A 变为 *
+                        # 现在再保存账户
+                        uid = cookies['DedeUserID']
+                        all_users = [u["user_id"] for u in get_b_u_c_m().get_all_users()["data"]["users"]]
+                        if str(uid) in all_users:
+                            get_b_u_c_m().update_user(cookies, False)
+                        else:
+                            get_b_u_c_m().add_user(cookies)
+                        log_save(obs.LOG_INFO, f"用户 {uid} 已添加")
+                        # 如果当前没有默认用户，设为默认
+                        if not get_b_u_c_m().get_default_user_id():
+                            get_b_u_c_m().set_default_user(uid)
+
+                    # 清除二维码图片，停止轮询
+                    GlobalVariableOfData.loginQRCodePillowImg = None
+                    should_stop = True
+                    return
+
+                elif scan_code == 86038:
+                    log_save(obs.LOG_WARNING, "二维码已失效")
+                    GlobalVariableOfData.loginQRCodePillowImg = None
+                    should_stop = True
+                    return
+
+                # 其他状态（86090, 86101 等）继续轮询
+
             except Exception as e:
-                log_save(obs.LOG_ERROR, f"轮询过程异常: {e}")
+                log_save(obs.LOG_ERROR, f"轮询回调异常: {str(e)}")
                 should_stop = True
             finally:
                 if should_stop:
@@ -30231,8 +30358,7 @@ class ButtonFunction:
         ButtonFunction.button_function_start_danmu_forwarding_service()
         # -----------------------------------------------------------------------------------------------------------
         # 添加网页源-------------------------------------------------------------------------------------------------
-        if widget.CheckBox.resetDanmuSource.Bool:
-            ButtonFunction.button_function_add_danmu_browser()
+        ButtonFunction.button_function_add_danmu_browser()
 
         return True
 
@@ -30328,8 +30454,7 @@ class ButtonFunction:
         ButtonFunction.button_function_stop_danmu_forwarding_service()
         # -----------------------------------------------------------------------------------------------------------
         # 移除浏览器源-------------------------------------------------------------------------------------------------
-        if widget.CheckBox.resetDanmuSource.Bool:
-            ButtonFunction.button_function_remove_danmu_browser()
+        ButtonFunction.button_function_remove_danmu_browser()
 
         return True
 
@@ -30650,7 +30775,7 @@ widget.widget_Group_dict = {
         },
         "danmuOnOff": {
             "Name": "danmu_onoff_group",
-            "Description": "弹幕显示开关",
+            "Description": "on/off",
             "Type": obs.OBS_GROUP_CHECKABLE,
             "GroupProps": "danmu_onoff_props",
             "ModifiedIs": True
@@ -30798,8 +30923,8 @@ widget.widget_ComboBox_dict = {
     "danmu_props": {
         "danmuRoom": {
             "Name": "danmu_room_comboBox",
-            "Description": "目标直播间",
-            "LongDescription": "发送和接收弹幕的直播间（可以不是当前直播的帐号），输入房间号也可以添加",
+            "Description": "直播间",
+            "LongDescription": "发送和接收弹幕的直播间，输入房间号也可以添加",
             "Type": obs.OBS_COMBO_TYPE_EDITABLE,
             "ModifiedIs": True
         },
