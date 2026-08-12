@@ -6632,6 +6632,8 @@ class BilibiliCSRFAuthenticator:
 
             self.user_id = self.cookies["DedeUserID"]
             self.csrf = self.cookies["bili_jct"]
+            # 新增：提取 buvid3
+            self.buvid3 = self.cookies.get("buvid3", "")
 
             return {
                 "success": True,
@@ -8275,9 +8277,10 @@ class BilibiliCSRFAuthenticator:
                 "api_code": None
             }
 
-    def start_live(self, room_id: int, area_id: int, platform: Literal["pc_link", "web_link", "android_link"]) -> Dict:
+    def start_live(self, room_id: int, area_id: int, platform: Literal["pc_link", "web_link", "android_link"]) -> Dict[
+        str, Any]:
         """
-        开始直播
+        开始直播（模拟官方客户端请求）
 
         Args:
             room_id: 直播间ID
@@ -8332,48 +8335,73 @@ class BilibiliCSRFAuthenticator:
                     "api_code": None
                 }
 
-            api = "https://api.live.bilibili.com/room/v1/Room/startLive"
-            headers = self.headers
-            if platform == 'pc_link':
-                headers[
-                    'User-Agent'] = 'LiveHime/8.2.0.10943 os/Windows pc_app/livehime build/10943 osVer/10.0.19045_x86_64'
-            elif platform == 'android_link':
-                # android_link 使用移动端 UA
-                headers['User-Agent'] = 'BiliApp/7.20.0 (Android 13; Pixel 6)'
-            csrf = self.csrf
+            # ---- 平台配置映射 ----
+            platform_config = {
+                "pc_link": {
+                    "user_agent": "LiveHime/7.64.0.10819 os/Windows pc_app/livehime build/10819 osVer/10.0_x86_64",
+                    "build": "10819",
+                    "version": "7.64.0.10819"
+                },
+                "web_link": {
+                    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "build": "9343",
+                    "version": ""
+                },
+                "android_link": {
+                    "user_agent": "BiliApp/7.20.0 (Android 13; Pixel 6)",
+                    "build": "9343",
+                    "version": "7.20.0"
+                }
+            }
 
-            # 构建请求参数
-            startLivedata = {
-                "access_key": "",  # 留空
-                "appkey": "aae92bc66f3edfab",  # 固定应用密钥
+            config = platform_config[platform]
+
+            # ---- 复制请求头，避免污染原始 self.headers ----
+            headers = self.headers.copy()
+            headers["User-Agent"] = config["user_agent"]
+            headers["Content-Type"] = "application/x-www-form-urlencoded"
+
+            # 添加 buvid 头部（如果有）
+            if hasattr(self, "buvid3") and self.buvid3:
+                headers["buvid"] = self.buvid3
+
+            # 添加 X-Event-TraceID（模拟直播姬）
+            if platform == "pc_link":
+                import uuid
+                trace_id = f"PC_LINK:{uuid.uuid4()}:{int(time.time() * 1000)}"
+                headers["X-Event-TraceID"] = trace_id
+
+            csrf = self.csrf
+            ts = str(int(time.time()))
+
+            # ---- 构建请求参数（包含 type=2 和 version） ----
+            start_data = {
+                "access_key": "",
+                "appkey": "aae92bc66f3edfab",
                 "platform": platform,
                 "room_id": room_id,
                 "area_v2": area_id,
-                "build": "10943",  # 客户端版本号
+                "build": config["build"],
                 "backup_stream": 0,
                 "csrf": csrf,
                 "csrf_token": csrf,
-                "ts": str(int(time.time()))  # 当前UNIX时间戳
+                "ts": ts,
+                "type": 2,  # 抓包中存在的额外参数
+                "version": config["version"]  # 版本参数
             }
 
-            # 对参数按字典序排序
-            sorted_params = sorted(startLivedata.items(), key=lambda x: x[0])
-
-            # 生成签名字符串 (参数串 + 固定盐值)
+            # ---- 排序并生成签名 ----
+            sorted_params = sorted(start_data.items(), key=lambda x: x[0])
             query_string = "&".join(f"{k}={v}" for k, v in sorted_params)
             sign_string = query_string + "af125a0d5279fd576c1b4418a3e8276d"
-
-            # 计算MD5签名
             md5_sign = hashlib.md5(sign_string.encode('utf-8')).hexdigest()
+            start_data["sign"] = md5_sign
 
-            # 添加签名到参数
-            startLivedata["sign"] = md5_sign
-
-            # 发送请求
+            # ---- 发送请求（参数放在 URL 查询字符串中） ----
             response = requests.post(
-                url=api,
+                url="https://api.live.bilibili.com/room/v1/Room/startLive",
                 headers=headers,
-                params=startLivedata,
+                params=start_data,  # 使用 params，数据放在 URL 查询串中
                 verify=self.verify_ssl,
                 timeout=30
             )
@@ -8395,7 +8423,6 @@ class BilibiliCSRFAuthenticator:
 
             # 判断开播结果
             if api_code == 0:
-                # 开播成功或重复开播
                 change_status = result.get("data", {}).get("change", 0)
                 if change_status == 1:
                     message = "开播成功"
@@ -8410,7 +8437,6 @@ class BilibiliCSRFAuthenticator:
                     "api_code": api_code
                 }
             else:
-                # 开播失败
                 error_msg = result.get("message", "未知错误")
                 return {
                     "success": False,
